@@ -263,10 +263,7 @@
 
                 const { passkey_id } = await finishResponse.json();
 
-                // Store auth info and redirect to file browser
-                localStorage.setItem('passkey_id', passkey_id);
-                localStorage.setItem('vault_name', vaultName);
-
+                // Session cookie is automatically set by server
                 showStatus('Success', `"${vaultName}" vault created successfully!`);
                 setTimeout(() => {
                     window.location.href = '/files.html';
@@ -305,10 +302,7 @@
 
                 const { passkey_id, user_id } = await identifyResponse.json();
 
-                // Store auth info and redirect to file browser
-                localStorage.setItem('passkey_id', passkey_id);
-                localStorage.setItem('user_id', user_id);
-
+                // Session cookie is automatically set by server
                 hideStatus();
                 window.location.href = '/files.html';
 

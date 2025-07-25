@@ -242,8 +242,9 @@ async fn delete_secret(
 
 async fn identify_user(
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(req): Json<types::IdentifyRequest>,
-) -> error::Result<Json<types::IdentifyResponse>> {
+) -> error::Result<(CookieJar, Json<types::IdentifyResponse>)> {
     println!(
         "Attempting to identify credential ID: {}",
         req.credential_id
@@ -264,19 +265,49 @@ async fn identify_user(
     // Try to find it with the converted format
     if let Ok(stored_cred) = state.storage.get_credential(&padded_base64).await {
         println!("Found credential with converted format: {}", padded_base64);
-        return Ok(Json(types::IdentifyResponse {
-            passkey_id: padded_base64,
-            user_id: stored_cred.user_id,
-        }));
+
+        // Create session and set cookie
+        let session_id =
+            state
+                .sessions
+                .create_session(stored_cred.user_id, padded_base64.clone(), None);
+
+        // Determine if we should use secure cookies (HTTPS)
+        let is_secure = false; // TODO: detect from request or config
+        let session_cookie = session::create_session_cookie(session_id, is_secure);
+        let jar = jar.add(session_cookie);
+
+        return Ok((
+            jar,
+            Json(types::IdentifyResponse {
+                passkey_id: padded_base64,
+                user_id: stored_cred.user_id,
+            }),
+        ));
     }
 
     // Fallback: try the original format in case it's already correct
     if let Ok(stored_cred) = state.storage.get_credential(&req.credential_id).await {
         println!("Found credential directly: {}", req.credential_id);
-        return Ok(Json(types::IdentifyResponse {
-            passkey_id: req.credential_id,
-            user_id: stored_cred.user_id,
-        }));
+
+        // Create session and set cookie
+        let session_id =
+            state
+                .sessions
+                .create_session(stored_cred.user_id, req.credential_id.clone(), None);
+
+        // Determine if we should use secure cookies (HTTPS)
+        let is_secure = false; // TODO: detect from request or config
+        let session_cookie = session::create_session_cookie(session_id, is_secure);
+        let jar = jar.add(session_cookie);
+
+        return Ok((
+            jar,
+            Json(types::IdentifyResponse {
+                passkey_id: req.credential_id,
+                user_id: stored_cred.user_id,
+            }),
+        ));
     }
 
     // Debug: List all stored credentials to see what's actually there
@@ -299,15 +330,15 @@ async fn identify_user(
 async fn create_file(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(mut req): Json<types::CreateFileRequest>,
+    Json(req): Json<types::CreateFileRequest>,
 ) -> error::Result<Json<types::CreateFileResponse>> {
     // Validate session and get user info
     let (user_id, passkey_id) = auth_helpers::get_user_info_from_session(&jar, &state)?;
 
-    // Override the passkey_id from session for security
-    req.passkey_id = passkey_id;
-
-    let response = state.storage.create_file(&req, user_id).await?;
+    let response = state
+        .storage
+        .create_file(&req, user_id, &passkey_id)
+        .await?;
 
     Ok(Json(response))
 }

@@ -233,34 +233,28 @@
             }, 3000);
         }
 
-        function initializeApp() {
-            // Check if user is authenticated
-            currentPasskeyId = localStorage.getItem('passkey_id');
-            currentUserId = localStorage.getItem('user_id');
-            const vaultName = localStorage.getItem('vault_name');
-
-            if (!currentPasskeyId) {
-                // Redirect to login if not authenticated
-                window.location.href = '/';
-                return;
-            }
-
-            document.getElementById('userDisplay').textContent = vaultName ? `Vault: ${vaultName}` : 'Authenticated';
-            loadFiles();
+        async function initializeApp() {
+            // Check if user is authenticated by trying to load files
+            document.getElementById('userDisplay').textContent = 'Authenticating...';
+            await loadFiles(); // This will redirect to login if authentication fails
         }
 
         async function loadFiles() {
-            if (!currentPasskeyId) {
-                showToast('Error', 'Please authenticate first', 'error');
-                return;
-            }
-
             try {
-                const encodedPasskeyId = encodeURIComponent(currentPasskeyId);
-                const response = await fetch(`/files/${encodedPasskeyId}`);
+                const response = await fetch('/files', {
+                    credentials: 'same-origin' // Include session cookies
+                });
 
                 if (!response.ok) {
-                    throw new Error('Failed to load files');
+                    if (response.status === 401) {
+                        // Redirect to login if unauthorized
+                        window.location.href = '/';
+                        return;
+                    }
+                    console.error('Files endpoint error - Status:', response.status, 'StatusText:', response.statusText);
+                    const errorText = await response.text();
+                    console.error('Error response body:', errorText);
+                    throw new Error(`Failed to load files: ${response.status} ${response.statusText}`);
                 }
 
                 const data = await response.json();
@@ -503,12 +497,13 @@
 
                 const response = await fetch('/files/create', {
                     method: 'POST',
+                    credentials: 'same-origin', // Include session cookies
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: filename,
                         tags: tags || '',
-                        content: content || '',
-                        passkey_id: currentPasskeyId
+                        content: content || ''
+                        // passkey_id now comes from session, not needed in request
                     })
                 });
 
@@ -548,12 +543,16 @@
             window.location.href = '/editor.html';
         }
 
-        function handleLogout() {
-            localStorage.removeItem('passkey_id');
-            localStorage.removeItem('user_id');
-            localStorage.removeItem('vault_name');
-            localStorage.removeItem('current_file_id');
-            localStorage.removeItem('current_file_name');
+        async function handleLogout() {
+            try {
+                await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin' // Include cookies
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            // Always redirect to login regardless of logout success
             window.location.href = '/';
         }
 

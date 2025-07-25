@@ -166,7 +166,7 @@ pub struct CreateFileRequest {
     pub filename: String,
     pub tags: String,
     pub content: String,
-    pub passkey_id: String,
+    // passkey_id now comes from session, not from request
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -177,10 +177,10 @@ pub struct CreateFileResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SaveVersionRequest {
-    pub file_id: Uuid,
     pub content: String,
     pub change_summary: Option<String>,
-    pub passkey_id: String,
+    // file_id now comes from URL path, not from request body
+    // passkey_id now comes from session, not from request
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -219,9 +219,9 @@ pub struct FileVersionsResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetFileContentRequest {
-    pub file_id: Uuid,
     pub version_id: Option<Uuid>, // If None, get latest version
-    pub passkey_id: String,
+                                  // file_id now comes from URL path, not from request body
+                                  // passkey_id now comes from session, not from request
 }
 
 #[derive(Debug, Serialize, Deserialize)]

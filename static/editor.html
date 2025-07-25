@@ -72,7 +72,6 @@
 
     <script>
         let currentFile = null;
-        let currentPasskeyId = null;
         let autoSaveTimeout = null;
         let lastSavedContent = '';
         let hasUnsavedChanges = false;
@@ -100,13 +99,7 @@
         }
 
         function initializeEditor() {
-            // Check if user is authenticated
-            currentPasskeyId = localStorage.getItem('passkey_id');
-            if (!currentPasskeyId) {
-                window.location.href = '/';
-                return;
-            }
-
+            // Get file info from localStorage (still needed for editor state)
             const fileId = localStorage.getItem('current_file_id');
             const fileName = localStorage.getItem('current_file_name');
 
@@ -125,20 +118,26 @@
         }
 
         async function loadFileContent() {
-            if (!currentFile || !currentPasskeyId) return;
+            if (!currentFile) return;
 
             try {
                 const response = await fetch(`/files/${currentFile.id}/content`, {
                     method: 'POST',
+                    credentials: 'same-origin', // Include session cookies
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        file_id: currentFile.id,
-                        version_id: null, // Get latest version
-                        passkey_id: currentPasskeyId
+                        version_id: null // Get latest version
+                        // file_id now comes from URL path, not request body
+                        // passkey_id now comes from session, not needed in request
                     })
                 });
 
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        // Redirect to login if unauthorized
+                        window.location.href = '/';
+                        return;
+                    }
                     throw new Error('Failed to load file');
                 }
 
@@ -163,7 +162,7 @@
         }
 
         async function saveFile() {
-            if (!currentFile || !currentPasskeyId) {
+            if (!currentFile) {
                 showToast('Error', 'No file to save', 'error');
                 return;
             }
@@ -174,16 +173,22 @@
 
                 const response = await fetch(`/files/${currentFile.id}/save`, {
                     method: 'POST',
+                    credentials: 'same-origin', // Include session cookies
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        file_id: currentFile.id,
                         content: content,
-                        change_summary: `Manual save at ${new Date().toLocaleTimeString()}`,
-                        passkey_id: currentPasskeyId
+                        change_summary: `Manual save at ${new Date().toLocaleTimeString()}`
+                        // file_id now comes from URL path, not request body
+                        // passkey_id now comes from session, not needed in request
                     })
                 });
 
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        // Redirect to login if unauthorized
+                        window.location.href = '/';
+                        return;
+                    }
                     throw new Error('Save failed');
                 }
 
@@ -238,7 +243,7 @@
         }
 
         async function autoSaveFile() {
-            if (!currentFile || !currentPasskeyId) return;
+            if (!currentFile) return;
 
             try {
                 const editor = document.getElementById('fileContent');
@@ -254,16 +259,22 @@
 
                 const response = await fetch(`/files/${currentFile.id}/save`, {
                     method: 'POST',
+                    credentials: 'same-origin', // Include session cookies
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        file_id: currentFile.id,
                         content: content,
-                        change_summary: `Auto-save at ${new Date().toLocaleTimeString()}`,
-                        passkey_id: currentPasskeyId
+                        change_summary: `Auto-save at ${new Date().toLocaleTimeString()}`
+                        // file_id now comes from URL path, not request body
+                        // passkey_id now comes from session, not needed in request
                     })
                 });
 
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        // Redirect to login if unauthorized
+                        window.location.href = '/';
+                        return;
+                    }
                     throw new Error('Auto-save failed');
                 }
 

@@ -149,17 +149,14 @@ impl Storage {
         &self,
         req: &CreateFileRequest,
         user_id: Uuid,
+        passkey_id: &str,
     ) -> Result<CreateFileResponse> {
         // Generate encryption materials
         let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials();
 
         // Encrypt content using common utility
-        let encrypted_content = crate::crypto::encrypt_with_materials(
-            &req.content,
-            &req.passkey_id,
-            &salt,
-            &nonce_bytes,
-        )?;
+        let encrypted_content =
+            crate::crypto::encrypt_with_materials(&req.content, passkey_id, &salt, &nonce_bytes)?;
 
         // Generate content hash for change detection
         let content_hash = format!("{:x}", md5::compute(req.content.as_bytes()));
@@ -172,7 +169,7 @@ impl Storage {
         let file = file::ActiveModel {
             id: Set(file_id),
             user_id: Set(user_id),
-            passkey_id: Set(req.passkey_id.clone()),
+            passkey_id: Set(passkey_id.to_string()),
             filename: Set(req.filename.clone()),
             tags: Set(req.tags.clone()),
             current_version_id: Set(Some(version_id)),
