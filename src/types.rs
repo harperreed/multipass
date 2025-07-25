@@ -118,6 +118,7 @@ pub struct StoredCredential {
     pub counter: u32,
 }
 
+// Legacy type - keeping for migration compatibility
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedData {
     pub id: Uuid,
@@ -128,4 +129,102 @@ pub struct EncryptedData {
     pub nonce: Vec<u8>,
     pub salt: Vec<u8>,
     pub created_at: i64,
+}
+
+// New file browser types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct File {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub passkey_id: String,
+    pub filename: String,
+    pub tags: String, // Stored as slash-separated string like "docs/home"
+    pub current_version_id: Option<Uuid>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileVersion {
+    pub id: Uuid,
+    pub file_id: Uuid,
+    pub user_id: Uuid,
+    pub version_number: i32,
+    pub encrypted_content: Vec<u8>,
+    pub nonce: Vec<u8>,
+    pub salt: Vec<u8>,
+    pub content_hash: String, // Hash of decrypted content for change detection
+    pub change_summary: Option<String>, // Optional description of changes
+    pub created_at: i64,
+}
+
+// File browser API types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateFileRequest {
+    pub filename: String,
+    pub tags: String,
+    pub content: String,
+    pub passkey_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateFileResponse {
+    pub file_id: Uuid,
+    pub version_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SaveVersionRequest {
+    pub file_id: Uuid,
+    pub content: String,
+    pub change_summary: Option<String>,
+    pub passkey_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SaveVersionResponse {
+    pub version_id: Uuid,
+    pub version_number: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileInfo {
+    pub id: Uuid,
+    pub filename: String,
+    pub tags: String,
+    pub version_count: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileBrowserResponse {
+    pub files: Vec<FileInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VersionInfo {
+    pub id: Uuid,
+    pub version_number: i32,
+    pub change_summary: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileVersionsResponse {
+    pub versions: Vec<VersionInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetFileContentRequest {
+    pub file_id: Uuid,
+    pub version_id: Option<Uuid>, // If None, get latest version
+    pub passkey_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetFileContentResponse {
+    pub content: String,
+    pub version_id: Uuid,
+    pub version_number: i32,
 }

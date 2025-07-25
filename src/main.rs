@@ -12,12 +12,13 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use base64::Engine;
-use sqlx::Row;
 
 mod auth;
 mod crypto;
 mod storage;
 mod types;
+mod entities;
+mod migration;
 
 use auth::AuthState;
 use storage::Storage;
@@ -162,10 +163,11 @@ async fn identify_user(
     
     // Debug: List all stored credentials to see what's actually there
     println!("Debugging: Let's see what credentials are stored...");
-    if let Ok(rows) = sqlx::query("SELECT id FROM credentials").fetch_all(&state.storage.pool).await {
-        for row in rows {
-            let stored_id: String = row.get("id");
-            println!("Stored credential ID: {}", stored_id);
+    use crate::entities::credential;
+    use sea_orm::EntityTrait;
+    if let Ok(credentials) = credential::Entity::find().all(&state.storage.db).await {
+        for cred in credentials {
+            println!("Stored credential ID: {}", cred.id);
         }
     }
     
