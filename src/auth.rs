@@ -2,18 +2,18 @@
 // ABOUTME: Handles registration and authentication flows for secure passkey-based auth
 
 use axum::{extract::State, http::StatusCode, response::Json};
-use serde_json::json;
 use base64::Engine;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use uuid::Uuid;
 use webauthn_rs::{
-    prelude::{PasskeyAuthentication, PasskeyRegistration, Passkey},
     Webauthn, WebauthnBuilder,
+    prelude::{Passkey, PasskeyAuthentication, PasskeyRegistration},
 };
 
-use crate::types::*;
 use crate::AppState;
+use crate::types::*;
 
 #[derive(Clone)]
 pub struct AuthState {
@@ -26,7 +26,31 @@ impl AuthState {
     pub fn new() -> anyhow::Result<Self> {
         let rp_id = "localhost";
         let rp_origin = url::Url::parse("http://localhost:3000")?;
-        
+
+        let builder = WebauthnBuilder::new(rp_id, &rp_origin)?;
+        let webauthn = builder.build()?;
+
+        Ok(Self {
+            webauthn,
+            registration_sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
+            authentication_sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    pub fn new_with_config(host: &str, port: u16, use_https: bool) -> anyhow::Result<Self> {
+        let rp_id = if host == "127.0.0.1" || host == "0.0.0.0" {
+            "localhost"
+        } else {
+            host
+        };
+
+        let protocol = if use_https { "https" } else { "http" };
+        let rp_origin = if (use_https && port == 443) || (!use_https && port == 80) {
+            url::Url::parse(&format!("{}://{}", protocol, rp_id))?
+        } else {
+            url::Url::parse(&format!("{}://{}:{}", protocol, rp_id, port))?
+        };
+
         let builder = WebauthnBuilder::new(rp_id, &rp_origin)?;
         let webauthn = builder.build()?;
 
@@ -50,35 +74,56 @@ pub async fn register_start(
     };
 
     // Check if user already exists (using UUID as unique identifier)
-    if state.storage.get_user_by_username(&req.username).await.is_ok() {
-        return Err((StatusCode::CONFLICT, Json(json!({
-            "error": "Vault already exists",
-            "message": "This vault already exists. Please try accessing it instead."
-        }))));
+    if state
+        .storage
+        .get_user_by_username(&req.username)
+        .await
+        .is_ok()
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "Vault already exists",
+                "message": "This vault already exists. Please try accessing it instead."
+            })),
+        ));
     }
 
     // Store user in database
-    state.storage.store_user(&user).await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "error": "Database error",
-            "message": "Failed to store user in database"
-        }))))?;
+    state.storage.store_user(&user).await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "Database error",
+                "message": "Failed to store user in database"
+            })),
+        )
+    })?;
 
     // Start passkey registration - use display_name as the identifier shown to user
-    let (ccr, passkey_registration) = state.auth.webauthn
+    let (ccr, passkey_registration) = state
+        .auth
+        .webauthn
         .start_passkey_registration(
             user_id,
-            &user.display_name,  // This is what shows in the passkey dialog
+            &user.display_name, // This is what shows in the passkey dialog
             &user.display_name,
             None,
         )
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "error": "WebAuthn error",
-            "message": "Failed to start passkey registration"
-        }))))?;
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "WebAuthn error",
+                    "message": "Failed to start passkey registration"
+                })),
+            )
+        })?;
 
     // Store registration session
-    state.auth.registration_sessions
+    state
+        .auth
+        .registration_sessions
         .lock()
         .unwrap()
         .insert(user_id, passkey_registration);
@@ -94,20 +139,27 @@ pub async fn register_finish(
     Json(req): Json<RegisterFinishRequest>,
 ) -> Result<Json<RegisterFinishResponse>, StatusCode> {
     // Retrieve registration session
-    let registration_session = state.auth.registration_sessions
+    let registration_session = state
+        .auth
+        .registration_sessions
         .lock()
         .unwrap()
         .remove(&req.user_id)
         .ok_or(StatusCode::BAD_REQUEST)?;
 
     // Finish registration
-    let passkey = state.auth.webauthn
+    let passkey = state
+        .auth
+        .webauthn
         .finish_passkey_registration(&req.credential, &registration_session)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Store the credential
     let credential_id = base64::engine::general_purpose::STANDARD.encode(passkey.cred_id());
-    state.storage.store_credential(&credential_id, req.user_id, &passkey).await
+    state
+        .storage
+        .store_credential(&credential_id, req.user_id, &passkey)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(RegisterFinishResponse {
@@ -121,41 +173,70 @@ pub async fn authenticate_start(
     Json(req): Json<AuthenticateStartRequest>,
 ) -> Result<Json<AuthenticateStartResponse>, (StatusCode, Json<serde_json::Value>)> {
     // Get user
-    let user = state.storage.get_user_by_username(&req.username).await
-        .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({
-            "error": "Vault not found",
-            "message": format!("No vault found with ID: {}", req.username)
-        }))))?;
+    let user = state
+        .storage
+        .get_user_by_username(&req.username)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": "Vault not found",
+                    "message": format!("No vault found with ID: {}", req.username)
+                })),
+            )
+        })?;
 
     // Get user's credentials
-    let credentials = state.storage.get_user_credentials(user.id).await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "error": "Database error",
-            "message": "Failed to retrieve credentials"
-        }))))?;
+    let credentials = state
+        .storage
+        .get_user_credentials(user.id)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "Database error",
+                    "message": "Failed to retrieve credentials"
+                })),
+            )
+        })?;
 
     if credentials.is_empty() {
-        return Err((StatusCode::NOT_FOUND, Json(json!({
-            "error": "No credentials found",
-            "message": "This vault has no registered passkeys"
-        }))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "error": "No credentials found",
+                "message": "This vault has no registered passkeys"
+            })),
+        ));
     }
 
-    let passkeys: Vec<Passkey> = credentials.into_iter()
+    let passkeys: Vec<Passkey> = credentials
+        .into_iter()
         .filter_map(|cred| bincode::deserialize(&cred.credential_data).ok())
         .collect();
 
     // Start authentication
-    let (rcr, passkey_authentication) = state.auth.webauthn
+    let (rcr, passkey_authentication) = state
+        .auth
+        .webauthn
         .start_passkey_authentication(&passkeys)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "error": "WebAuthn error",
-            "message": "Failed to start authentication"
-        }))))?;
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "WebAuthn error",
+                    "message": "Failed to start authentication"
+                })),
+            )
+        })?;
 
     // Store authentication session
     let session_id = Uuid::new_v4().to_string();
-    state.auth.authentication_sessions
+    state
+        .auth
+        .authentication_sessions
         .lock()
         .unwrap()
         .insert(session_id, passkey_authentication);
@@ -175,31 +256,41 @@ pub async fn authenticate_finish(
         let mut sessions = state.auth.authentication_sessions.lock().unwrap();
         let mut auth_result = None;
         let mut session_to_remove = None;
-        
+
         for (session_id, auth_session) in sessions.iter() {
-            if let Ok(auth_success) = state.auth.webauthn.finish_passkey_authentication(&req.credential, auth_session) {
+            if let Ok(auth_success) = state
+                .auth
+                .webauthn
+                .finish_passkey_authentication(&req.credential, auth_session)
+            {
                 auth_result = Some(auth_success);
                 session_to_remove = Some(session_id.clone());
                 break;
             }
         }
-        
+
         if let Some(session_id) = &session_to_remove {
             sessions.remove(session_id);
         }
-        
+
         (auth_result, session_to_remove)
     };
 
     let auth_success = auth_success.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     // Get credential and user info
     let credential_id = base64::engine::general_purpose::STANDARD.encode(auth_success.cred_id());
-    let stored_cred = state.storage.get_credential(&credential_id).await
+    let stored_cred = state
+        .storage
+        .get_credential(&credential_id)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Update counter
-    state.storage.update_credential_counter(&credential_id, auth_success.counter()).await
+    state
+        .storage
+        .update_credential_counter(&credential_id, auth_success.counter())
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(AuthenticateFinishResponse {

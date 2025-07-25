@@ -16,9 +16,19 @@ impl MigrationTrait for Migration {
                     .table(Users::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(Users::Id).uuid().not_null().primary_key())
-                    .col(ColumnDef::new(Users::Username).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(Users::Username)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(ColumnDef::new(Users::DisplayName).string().not_null())
-                    .col(ColumnDef::new(Users::CreatedAt).big_integer().not_null().default(Expr::current_timestamp()))
+                    .col(
+                        ColumnDef::new(Users::CreatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -29,11 +39,30 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Credentials::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(Credentials::Id).string().not_null().primary_key())
+                    .col(
+                        ColumnDef::new(Credentials::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(Credentials::UserId).uuid().not_null())
-                    .col(ColumnDef::new(Credentials::CredentialData).blob().not_null())
-                    .col(ColumnDef::new(Credentials::Counter).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(Credentials::CreatedAt).big_integer().not_null().default(Expr::current_timestamp()))
+                    .col(
+                        ColumnDef::new(Credentials::CredentialData)
+                            .blob()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Credentials::Counter)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(Credentials::CreatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_credentials_user_id")
@@ -57,8 +86,18 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Files::Filename).string().not_null())
                     .col(ColumnDef::new(Files::Tags).string().not_null().default(""))
                     .col(ColumnDef::new(Files::CurrentVersionId).uuid())
-                    .col(ColumnDef::new(Files::CreatedAt).big_integer().not_null().default(Expr::current_timestamp()))
-                    .col(ColumnDef::new(Files::UpdatedAt).big_integer().not_null().default(Expr::current_timestamp()))
+                    .col(
+                        ColumnDef::new(Files::CreatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(Files::UpdatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_files_user_id")
@@ -83,16 +122,38 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(FileVersions::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(FileVersions::Id).uuid().not_null().primary_key())
+                    .col(
+                        ColumnDef::new(FileVersions::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(FileVersions::FileId).uuid().not_null())
                     .col(ColumnDef::new(FileVersions::UserId).uuid().not_null())
-                    .col(ColumnDef::new(FileVersions::VersionNumber).integer().not_null())
-                    .col(ColumnDef::new(FileVersions::EncryptedContent).blob().not_null())
+                    .col(
+                        ColumnDef::new(FileVersions::VersionNumber)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(FileVersions::EncryptedContent)
+                            .blob()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(FileVersions::Nonce).blob().not_null())
                     .col(ColumnDef::new(FileVersions::Salt).blob().not_null())
-                    .col(ColumnDef::new(FileVersions::ContentHash).string().not_null())
+                    .col(
+                        ColumnDef::new(FileVersions::ContentHash)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(FileVersions::ChangeSummary).string())
-                    .col(ColumnDef::new(FileVersions::CreatedAt).big_integer().not_null().default(Expr::current_timestamp()))
+                    .col(
+                        ColumnDef::new(FileVersions::CreatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_file_versions_file_id")
@@ -126,15 +187,15 @@ impl MigrationTrait for Migration {
         manager
             .drop_table(Table::drop().table(FileVersions::Table).to_owned())
             .await?;
-        
+
         manager
             .drop_table(Table::drop().table(Files::Table).to_owned())
             .await?;
-        
+
         manager
             .drop_table(Table::drop().table(Credentials::Table).to_owned())
             .await?;
-        
+
         manager
             .drop_table(Table::drop().table(Users::Table).to_owned())
             .await?;

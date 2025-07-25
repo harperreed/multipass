@@ -2,14 +2,17 @@
 // ABOUTME: Handles all database operations using SeaORM entities and migrations
 
 use anyhow::Result;
-use sea_orm::{Database, DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, PaginatorTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, Set,
+};
 use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
-use crate::types::*;
-use crate::entities::{user, credential, file, file_version};
+use crate::entities::{credential, file, file_version, user};
 use crate::migration::Migrator;
+use crate::types::*;
 
 pub struct Storage {
     pub db: DatabaseConnection,
@@ -19,10 +22,10 @@ impl Storage {
     pub async fn new() -> Result<Self> {
         // Connect to SQLite database
         let db = Database::connect("sqlite:multipass.db?mode=rwc").await?;
-        
+
         // Run migrations
         Migrator::up(&db, None).await?;
-        
+
         Ok(Self { db })
     }
 
@@ -34,7 +37,7 @@ impl Storage {
             display_name: Set(user_data.display_name.clone()),
             created_at: Set(chrono::Utc::now().timestamp()),
         };
-        
+
         user.insert(&self.db).await?;
         Ok(())
     }
@@ -67,9 +70,14 @@ impl Storage {
     }
 
     // Credential operations
-    pub async fn store_credential(&self, credential_id: &str, user_id: Uuid, passkey: &Passkey) -> Result<()> {
+    pub async fn store_credential(
+        &self,
+        credential_id: &str,
+        user_id: Uuid,
+        passkey: &Passkey,
+    ) -> Result<()> {
         let credential_data = bincode::serialize(passkey)?;
-        
+
         let credential = credential::ActiveModel {
             id: Set(credential_id.to_string()),
             user_id: Set(user_id),
@@ -102,12 +110,15 @@ impl Storage {
             .all(&self.db)
             .await?;
 
-        Ok(credentials.into_iter().map(|c| StoredCredential {
-            id: c.id,
-            user_id: c.user_id,
-            credential_data: c.credential_data,
-            counter: c.counter as u32,
-        }).collect())
+        Ok(credentials
+            .into_iter()
+            .map(|c| StoredCredential {
+                id: c.id,
+                user_id: c.user_id,
+                credential_data: c.credential_data,
+                counter: c.counter as u32,
+            })
+            .collect())
     }
 
     pub async fn update_credential_counter(&self, credential_id: &str, counter: u32) -> Result<()> {
@@ -123,10 +134,83 @@ impl Storage {
         Ok(())
     }
 
-    // File operations - TODO: Implement after updating crypto module
-    pub async fn create_file(&self, _req: &CreateFileRequest, _user_id: Uuid) -> Result<CreateFileResponse> {
-        // TODO: Implement file creation with new crypto integration
-        Err(anyhow::anyhow!("File creation not yet implemented with SeaORM"))
+    // File operations
+    pub async fn create_file(
+        &self,
+        req: &CreateFileRequest,
+        user_id: Uuid,
+    ) -> Result<CreateFileResponse> {
+        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+        use chacha20poly1305::{
+            ChaCha20Poly1305, Nonce,
+            aead::{Aead, KeyInit, OsRng},
+        };
+        use rand::RngCore;
+
+        // Generate encryption materials
+        let mut salt = [0u8; 16];
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut salt);
+        OsRng.fill_bytes(&mut nonce_bytes);
+
+        // Derive key from passkey ID
+        let argon2 = Argon2::default();
+        let salt_string =
+            SaltString::encode_b64(&salt).map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
+        let password_hash = argon2
+            .hash_password(req.passkey_id.as_bytes(), &salt_string)
+            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
+        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
+        let key = &key_bytes[..32]; // Take first 32 bytes for ChaCha20Poly1305
+
+        // Encrypt content
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let encrypted_content = cipher
+            .encrypt(nonce, req.content.as_bytes())
+            .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
+
+        // Generate content hash for change detection
+        let content_hash = format!("{:x}", md5::compute(req.content.as_bytes()));
+
+        // Create file record
+        let file_id = Uuid::new_v4();
+        let version_id = Uuid::new_v4();
+        let now = chrono::Utc::now().timestamp();
+
+        let file = file::ActiveModel {
+            id: Set(file_id),
+            user_id: Set(user_id),
+            passkey_id: Set(req.passkey_id.clone()),
+            filename: Set(req.filename.clone()),
+            tags: Set(req.tags.clone()),
+            current_version_id: Set(Some(version_id)),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        let file_version = file_version::ActiveModel {
+            id: Set(version_id),
+            file_id: Set(file_id),
+            user_id: Set(user_id),
+            version_number: Set(1),
+            encrypted_content: Set(encrypted_content),
+            nonce: Set(nonce_bytes.to_vec()),
+            salt: Set(salt.to_vec()),
+            content_hash: Set(content_hash),
+            change_summary: Set(Some("Initial version".to_string())),
+            created_at: Set(now),
+        };
+
+        // Insert both records in a transaction-like fashion
+        file.insert(&self.db).await?;
+        file_version.insert(&self.db).await?;
+
+        Ok(CreateFileResponse {
+            file_id,
+            version_id,
+        })
     }
 
     pub async fn get_files_for_user(&self, passkey_id: &str) -> Result<Vec<FileInfo>> {
@@ -156,6 +240,167 @@ impl Storage {
         Ok(file_infos)
     }
 
+    pub async fn get_file_content(
+        &self,
+        file_id: Uuid,
+        version_id: Option<Uuid>,
+        passkey_id: &str,
+    ) -> Result<GetFileContentResponse> {
+        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+        use chacha20poly1305::{
+            ChaCha20Poly1305, Nonce,
+            aead::{Aead, KeyInit},
+        };
+
+        // Get the file to verify ownership
+        let file = file::Entity::find_by_id(file_id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("File not found"))?;
+
+        // Verify the user owns this file via passkey_id
+        if file.passkey_id != passkey_id {
+            return Err(anyhow::anyhow!("Access denied"));
+        }
+
+        // Get the version (latest if not specified)
+        let version = if let Some(vid) = version_id {
+            file_version::Entity::find_by_id(vid)
+                .one(&self.db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Version not found"))?
+        } else {
+            // Get the latest version
+            file_version::Entity::find()
+                .filter(file_version::Column::FileId.eq(file_id))
+                .order_by_desc(file_version::Column::VersionNumber)
+                .one(&self.db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("No versions found"))?
+        };
+
+        // Decrypt the content
+        let argon2 = Argon2::default();
+        let salt_string = SaltString::encode_b64(&version.salt)
+            .map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
+        let password_hash = argon2
+            .hash_password(passkey_id.as_bytes(), &salt_string)
+            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
+        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
+        let key = &key_bytes[..32];
+
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
+        let nonce = Nonce::from_slice(&version.nonce);
+        let decrypted_content = cipher
+            .decrypt(nonce, version.encrypted_content.as_slice())
+            .map_err(|_| anyhow::anyhow!("Decryption failed"))?;
+
+        let content = String::from_utf8(decrypted_content)
+            .map_err(|_| anyhow::anyhow!("Invalid UTF-8 content"))?;
+
+        Ok(GetFileContentResponse {
+            content,
+            version_id: version.id,
+            version_number: version.version_number,
+        })
+    }
+
+    pub async fn save_file_version(
+        &self,
+        file_id: Uuid,
+        content: &str,
+        change_summary: Option<&str>,
+        passkey_id: &str,
+    ) -> Result<SaveVersionResponse> {
+        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+        use chacha20poly1305::{
+            ChaCha20Poly1305, Nonce,
+            aead::{Aead, KeyInit, OsRng},
+        };
+        use rand::RngCore;
+
+        // Get the file to verify ownership
+        let file = file::Entity::find_by_id(file_id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("File not found"))?;
+
+        // Verify the user owns this file via passkey_id
+        if file.passkey_id != passkey_id {
+            return Err(anyhow::anyhow!("Access denied"));
+        }
+
+        // Get the current highest version number
+        let current_max_version = file_version::Entity::find()
+            .filter(file_version::Column::FileId.eq(file_id))
+            .order_by_desc(file_version::Column::VersionNumber)
+            .one(&self.db)
+            .await?
+            .map(|v| v.version_number)
+            .unwrap_or(0);
+
+        let new_version_number = current_max_version + 1;
+
+        // Generate encryption materials
+        let mut salt = [0u8; 16];
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut salt);
+        OsRng.fill_bytes(&mut nonce_bytes);
+
+        // Derive key from passkey ID
+        let argon2 = Argon2::default();
+        let salt_string =
+            SaltString::encode_b64(&salt).map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
+        let password_hash = argon2
+            .hash_password(passkey_id.as_bytes(), &salt_string)
+            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
+        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
+        let key = &key_bytes[..32];
+
+        // Encrypt content
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let encrypted_content = cipher
+            .encrypt(nonce, content.as_bytes())
+            .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
+
+        // Generate content hash for change detection
+        let content_hash = format!("{:x}", md5::compute(content.as_bytes()));
+
+        // Create new version
+        let version_id = Uuid::new_v4();
+        let now = chrono::Utc::now().timestamp();
+
+        let file_version_record = file_version::ActiveModel {
+            id: Set(version_id),
+            file_id: Set(file_id),
+            user_id: Set(file.user_id),
+            version_number: Set(new_version_number),
+            encrypted_content: Set(encrypted_content),
+            nonce: Set(nonce_bytes.to_vec()),
+            salt: Set(salt.to_vec()),
+            content_hash: Set(content_hash),
+            change_summary: Set(change_summary.map(|s| s.to_string())),
+            created_at: Set(now),
+        };
+
+        // Insert the new version
+        file_version_record.insert(&self.db).await?;
+
+        // Update the file's current_version_id and updated_at
+        let mut file_update: file::ActiveModel = file.into();
+        file_update.current_version_id = Set(Some(version_id));
+        file_update.updated_at = Set(now);
+        file_update.update(&self.db).await?;
+
+        Ok(SaveVersionResponse {
+            version_id,
+            version_number: new_version_number,
+        })
+    }
+
     // Legacy methods for compatibility - will be removed after migration
     pub async fn store_encrypted_data(&self, _data: &EncryptedData) -> Result<()> {
         // This is a temporary bridge method
@@ -170,7 +415,9 @@ impl Storage {
 
     pub async fn get_encrypted_data_by_id(&self, _data_id: &str) -> Result<EncryptedData> {
         // Legacy compatibility - this method will be phased out
-        Err(anyhow::anyhow!("Legacy method - use file operations instead"))
+        Err(anyhow::anyhow!(
+            "Legacy method - use file operations instead"
+        ))
     }
 
     pub async fn delete_encrypted_data(&self, _data_id: &str) -> Result<()> {

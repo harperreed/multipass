@@ -6,82 +6,252 @@
     <title>MultiPass - Secure Data with Passkeys</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #000080 url('data:image/gif;base64,R0lGODlhEAAQAPIAAAAAAP///8zMzJmZmWZmZjMzMwAAAAAAACH5BAkKAAEALAAAAAAQABAAAAM2GLrc/jDKSWu4OOvNu/9gKI5kaZ5oqq5s675wLM90bd94ru987//AoHBILBqPyKRyyWw6BwA7') repeat;
+            color: #FFFF00;
+            font-size: 12px;
             min-height: 100vh;
-            color: #333;
         }
-        
+
         .container {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-        
-        h1 {
-            color: #4a5568;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .section {
-            margin-bottom: 30px;
-            padding: 20px;
-            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
             border-radius: 8px;
+            padding: 24px;
+            margin: 20px auto;
+            max-width: 1200px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        
+
+        h1 {
+            color: #495057;
+            text-align: center;
+            margin-bottom: 8px;
+            font-size: 28px;
+            font-weight: 600;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .section {
+            margin-bottom: 24px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
         .section h2 {
-            color: #2d3748;
+            color: #343a40;
             margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 20px;
+            font-weight: 600;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        
+
         .subsection {
-            margin-bottom: 25px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border-left: 4px solid #4299e1;
+            margin-bottom: 4px;
+            padding: 4px;
+            background: #c0c0c0;
+            border-radius: 0;
+            border: 1px inset #c0c0c0;
         }
-        
+
         .subsection h3 {
             color: #2d3748;
             margin-top: 0;
             margin-bottom: 15px;
         }
-        
-        .secret-item {
-            background: white;
-            padding: 12px;
-            margin: 8px 0;
-            border-radius: 6px;
+
+        /* File Browser Styles */
+        .file-browser {
+            display: flex;
+            height: 600px;
             border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #f8f9fa;
+            border-right: 1px solid #e2e8f0;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .tag-tree {
+            padding: 10px;
+        }
+
+        .tag-folder {
+            margin: 2px 0;
+        }
+
+        .tag-folder-header {
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: #4a5568;
+        }
+
+        .tag-folder-header:hover {
+            background: #e2e8f0;
+        }
+
+        .tag-folder-header.active {
+            background: #4299e1;
+            color: white;
+        }
+
+        .tag-folder-icon {
+            margin-right: 8px;
+            font-size: 12px;
+        }
+
+        .tag-folder-children {
+            margin-left: 16px;
+            display: none;
+        }
+
+        .tag-folder-children.expanded {
+            display: block;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toolbar {
+            padding: 15px;
+            border-bottom: 1px solid #e2e8f0;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        
-        .secret-title {
+
+        .toolbar-left {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .toolbar-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-box {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            width: 200px;
+        }
+
+        .file-grid {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .file-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .file-card:hover {
+            border-color: #4299e1;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .file-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: #4299e1;
+        }
+
+        .file-name {
+            font-weight: 500;
+            color: #2d3748;
+            margin-bottom: 5px;
+            word-break: break-word;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: #718096;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .file-tags {
+            font-size: 11px;
+            color: #805ad5;
+            margin-top: 5px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Create File Modal */
+        .create-file-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
             font-weight: 500;
             color: #2d3748;
         }
-        
-        .secret-actions {
-            display: flex;
-            gap: 8px;
+
+        .form-group input, .form-group textarea {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 14px;
         }
-        
-        .secret-actions button {
-            width: auto;
-            padding: 6px 12px;
-            margin: 0;
-            font-size: 12px;
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
         }
-        
+
         /* Modal styles */
         .modal {
             display: none;
@@ -93,7 +263,7 @@
             height: 100%;
             background-color: rgba(0,0,0,0.5);
         }
-        
+
         .modal-content {
             background-color: white;
             margin: 15% auto;
@@ -103,74 +273,124 @@
             max-width: 400px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
-        
+
         .modal h3 {
             color: #2d3748;
             margin-top: 0;
             margin-bottom: 15px;
         }
-        
+
         .modal p {
             color: #718096;
             margin-bottom: 20px;
         }
-        
+
         .modal-buttons {
             display: flex;
             gap: 10px;
             margin-top: 20px;
         }
-        
+
         .modal-buttons button {
             flex: 1;
         }
-        
+
         .cancel-btn {
             background: #a0aec0 !important;
         }
-        
-        input, textarea, button {
+
+        .nav-btn {
+            width: auto !important;
+            padding: 8px 16px !important;
+            margin: 0 !important;
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .nav-btn:hover {
+            background: #cbd5e0;
+        }
+
+        .save-btn {
+            width: auto !important;
+            padding: 8px 16px !important;
+            margin: 0 !important;
+        }
+
+        input, textarea {
             width: 100%;
-            padding: 12px;
+            padding: 8px 12px;
             margin: 8px 0;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
             font-size: 14px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #ffffff;
             box-sizing: border-box;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
         }
-        
+
+        input:focus, textarea:focus {
+            outline: 0;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+
         button {
-            background: #4299e1;
-            color: white;
-            border: none;
-            cursor: pointer;
+            padding: 8px 16px;
+            margin: 4px 2px;
+            border: 1px solid #0d6efd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0d6efd;
+            color: #ffffff;
             font-weight: 500;
-            transition: background-color 0.2s;
+            box-sizing: border-box;
+            cursor: pointer;
+            transition: all 0.15s ease-in-out;
         }
-        
+
+        button:active {
+            background: #0b5ed7;
+            border-color: #0a58ca;
+            transform: translateY(1px);
+        }
+
         button:hover {
-            background: #3182ce;
+            background: #0b5ed7;
+            border-color: #0a58ca;
         }
-        
+
+        /* Enterprise professional styling */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+            background: #f8f9fa !important;
+            color: #212529 !important;
+            font-size: 14px !important;
+            line-height: 1.5 !important;
+            animation: none !important;
+        }
+
         button:disabled {
             background: #a0aec0;
             cursor: not-allowed;
         }
-        
+
         .success {
             color: #38a169;
             font-weight: 500;
         }
-        
+
         .error {
             color: #e53e3e;
             font-weight: 500;
         }
-        
+
         .hidden {
             display: none;
         }
-        
+
         .data-item {
             background: #f7fafc;
             padding: 15px;
@@ -178,11 +398,11 @@
             border-radius: 6px;
             border: 1px solid #e2e8f0;
         }
-        
+
         .data-item strong {
             color: #2d3748;
         }
-        
+
         #status {
             padding: 10px;
             margin: 10px 0;
@@ -193,35 +413,56 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔐 MultiPass</h1>
-        <p style="text-align: center; color: #718096;">Secure your data with passkey authentication</p>
-        
+        <h1>MultiPass</h1>
+        <p style="text-align: center; color: #6c757d; font-size: 16px; margin-bottom: 32px;">Enterprise Secure File Management with Passkey Authentication</p>
+
         <div id="status"></div>
-        
+
         <div class="section" id="authSection">
             <h2>🔐 MultiPass Vault</h2>
             <p>Passwordless security with your device's built-in authentication</p>
             <button onclick="createVault()">🆕 Create New Vault</button>
             <button onclick="loginToVault()">🔑 Access My Vault</button>
         </div>
-        
+
         <div class="section hidden" id="vaultSection">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>🗄️ Your Encrypted Vault</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>📁 MultiPass File Browser</h2>
                 <button onclick="logout()" style="width: auto; background: #e53e3e;">🚪 Logout</button>
             </div>
-            
-            <div class="subsection">
-                <h3>📝 Add New Secret</h3>
-                <input type="text" id="secretTitle" placeholder="Title (e.g., 'Bank Password', 'API Key')" required>
-                <textarea id="secretData" placeholder="Enter secret data..." rows="3"></textarea>
-                <button onclick="addSecret()">🔒 Encrypt & Store</button>
-            </div>
-            
-            <div class="subsection">
-                <h3>📋 Your Secrets</h3>
-                <div id="secretsList"></div>
-                <button onclick="refreshSecrets()">🔄 Refresh List</button>
+
+            <div class="file-browser">
+                <div class="sidebar">
+                    <div class="sidebar-header">📂 Organization</div>
+                    <div class="tag-tree" id="tagTree">
+                        <div class="tag-folder">
+                            <div class="tag-folder-header active" onclick="selectTag('')">
+                                <span class="tag-folder-icon">📄</span>
+                                All Files
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="main-content">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <span id="currentPath">📁 All Files</span>
+                        </div>
+                        <div class="toolbar-right">
+                            <input type="text" class="search-box" id="searchBox" placeholder="Search files..." oninput="filterFiles()">
+                            <button onclick="showCreateFileModal()">➕ New File</button>
+                        </div>
+                    </div>
+
+                    <div class="file-grid" id="fileGrid">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📄</div>
+                            <div>No files yet</div>
+                            <div style="margin-top: 8px; font-size: 14px;">Create your first file to get started</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -236,6 +477,49 @@
                 <button onclick="closeModal()" class="cancel-btn">Cancel</button>
                 <button onclick="proceedWithVaultCreation()">Create Vault</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Create File Modal -->
+    <div id="createFileModal" class="modal">
+        <div class="modal-content">
+            <h3>📄 Create New File</h3>
+            <div class="create-file-form">
+                <div class="form-group">
+                    <label for="fileName">File Name</label>
+                    <input type="text" id="fileName" placeholder="e.g., 'meeting-notes.md', 'passwords.txt'" required>
+                </div>
+                <div class="form-group">
+                    <label for="fileTags">Tags (optional)</label>
+                    <input type="text" id="fileTags" placeholder="e.g., 'work/meetings' or 'personal/passwords'">
+                    <small style="color: #718096;">Use forward slashes to create folders: 'docs/work/projects'</small>
+                </div>
+                <div class="form-group">
+                    <label for="fileContent">Initial Content (optional)</label>
+                    <textarea id="fileContent" placeholder="Start typing your content here..."></textarea>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button onclick="closeCreateFileModal()" class="cancel-btn">Cancel</button>
+                <button onclick="createFile()">Create File</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Editor Screen -->
+    <div id="fileEditorSection" class="section hidden">
+        <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #ffffff; color: #495057; border-bottom: 1px solid #dee2e6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button onclick="closeFileEditor()" class="nav-btn">← Back to Files</button>
+                <h3 id="editorTitle" style="margin: 0; color: #495057; font-size: 18px; font-weight: 600;">📄 Edit File</h3>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span id="editorStatus" style="font-size: 14px; color: #6c757d; font-weight: 500;">Ready</span>
+                <button onclick="saveFile()" class="save-btn">💾 Save (Ctrl+S)</button>
+            </div>
+        </div>
+        <div class="editor-container" style="height: calc(100vh - 60px); padding: 20px;">
+            <textarea id="fileEditor" style="width: 100%; height: 100%; resize: none; font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; border: 1px solid #ced4da; border-radius: 4px; padding: 16px; font-size: 14px; line-height: 1.5; background: #ffffff;"></textarea>
         </div>
     </div>
 
@@ -271,7 +555,7 @@
         // Prepare credential creation options for the browser
         function prepareCreationOptions(options) {
             console.log('Preparing creation options, input:', options);
-            
+
             if (!options) {
                 throw new Error('Creation options is null or undefined');
             }
@@ -280,16 +564,16 @@
             const result = {
                 // Core required fields
                 challenge: options.challenge ? (
-                    Array.isArray(options.challenge) 
+                    Array.isArray(options.challenge)
                         ? arrayToUint8Array(options.challenge)
                         : base64urlToUint8Array(options.challenge)
                 ) : new Uint8Array(0),
-                
+
                 rp: options.rp || options.relying_party || {
                     name: "MultiPass",
                     id: "localhost"
                 },
-                
+
                 user: options.user ? {
                     id: options.user.id ? (
                         Array.isArray(options.user.id)
@@ -299,21 +583,21 @@
                     name: options.user.name || options.user.username || "",
                     displayName: options.user.displayName || options.user.display_name || options.user.name || ""
                 } : {},
-                
+
                 // Map possible field name variations for pubKeyCredParams
-                pubKeyCredParams: options.pubKeyCredParams || 
-                                options.pub_key_cred_params || 
+                pubKeyCredParams: options.pubKeyCredParams ||
+                                options.pub_key_cred_params ||
                                 options.publicKeyCredentialParameters ||
                                 options.cred_params ||
                                 [
                                     { type: "public-key", alg: -7 },  // ES256
                                     { type: "public-key", alg: -257 } // RS256
                                 ],
-                
+
                 authenticatorSelection: options.authenticatorSelection || options.authenticator_selection || {},
                 attestation: options.attestation || "none",
                 timeout: options.timeout || 60000,
-                
+
                 excludeCredentials: options.excludeCredentials?.map(cred => ({
                     ...cred,
                     id: cred.id ? (
@@ -331,7 +615,7 @@
         // Prepare credential request options for authentication
         function prepareRequestOptions(options) {
             console.log('Preparing request options, input:', options);
-            
+
             if (!options) {
                 throw new Error('Request options is null or undefined');
             }
@@ -339,11 +623,11 @@
             const result = {
                 ...options,
                 challenge: options.challenge ? (
-                    Array.isArray(options.challenge) 
+                    Array.isArray(options.challenge)
                         ? arrayToUint8Array(options.challenge)
                         : base64urlToUint8Array(options.challenge)
                 ) : new Uint8Array(0),
-                
+
                 allowCredentials: options.allowCredentials?.map(cred => ({
                     ...cred,
                     id: cred.id ? (
@@ -352,7 +636,7 @@
                             : base64urlToUint8Array(cred.id)
                     ) : new Uint8Array(0)
                 })) || [],
-                
+
                 timeout: options.timeout || 60000,
                 userVerification: options.userVerification || "preferred"
             };
@@ -384,7 +668,7 @@
 
         async function proceedWithVaultCreation() {
             const vaultName = document.getElementById('vaultName').value.trim();
-            
+
             if (!vaultName) {
                 showStatus('Please enter a name for your vault', true);
                 return;
@@ -410,16 +694,16 @@
 
                 const responseData = await startResponse.json();
                 console.log('Full registration response:', responseData);
-                
+
                 const { user_id, creation_options } = responseData;
                 console.log('Creation options received:', creation_options);
                 console.log('Creation options keys:', Object.keys(creation_options));
-                
+
                 // webauthn-rs wraps the actual options in a publicKey field
                 const actualOptions = creation_options.publicKey;
                 console.log('Actual options to use:', actualOptions);
                 console.log('Actual options keys:', Object.keys(actualOptions));
-                
+
                 // Check for required WebAuthn fields
                 console.log('pubKeyCredParams:', actualOptions.pubKeyCredParams);
                 console.log('challenge:', actualOptions.challenge);
@@ -475,7 +759,7 @@
             try {
                 // Use discoverable credentials - let the authenticator show available passkeys
                 showStatus('Touch your device to access your vault...');
-                
+
                 const credential = await navigator.credentials.get({
                     publicKey: {
                         challenge: new Uint8Array(32), // Dummy challenge for discovery
@@ -505,7 +789,7 @@
                 showStatus(`✅ Vault accessed successfully!`);
                 document.getElementById('authSection').classList.add('hidden');
                 document.getElementById('vaultSection').classList.remove('hidden');
-                refreshSecrets();
+                loadFiles();
 
             } catch (error) {
                 console.error('Authentication error:', error);
@@ -521,7 +805,7 @@
 
             const title = document.getElementById('secretTitle').value;
             const data = document.getElementById('secretData').value;
-            
+
             if (!title || !data) {
                 showStatus('Please enter both title and data', true);
                 return;
@@ -564,7 +848,7 @@
 
                 const { secrets } = await response.json();
                 const secretsList = document.getElementById('secretsList');
-                
+
                 if (secrets.length === 0) {
                     secretsList.innerHTML = '<p style="color: #718096; text-align: center;">No secrets stored yet</p>';
                     return;
@@ -600,10 +884,10 @@
                 if (!response.ok) throw new Error('Decryption failed');
 
                 const { data } = await response.json();
-                
+
                 // Show in a modal/alert for now (could be improved with a proper modal)
                 alert(`${title}:\n\n${data}`);
-                
+
             } catch (error) {
                 console.error('Decryption error:', error);
                 showStatus(`Failed to decrypt "${title}"`, true);
@@ -622,7 +906,7 @@
 
                 showStatus(`✅ Secret "${title}" deleted`);
                 refreshSecrets();
-                
+
             } catch (error) {
                 console.error('Delete error:', error);
                 showStatus(`Failed to delete "${title}"`, true);
@@ -634,14 +918,415 @@
             currentUserId = null;
             document.getElementById('vaultSection').classList.add('hidden');
             document.getElementById('authSection').classList.remove('hidden');
-            document.getElementById('secretsList').innerHTML = '';
+            document.getElementById('fileGrid').innerHTML = '';
             showStatus('Logged out successfully');
         }
 
-        // Handle Enter key in modal
+        // File Browser Functions
+        let currentFiles = [];
+        let currentTag = '';
+        let currentEditingFile = null;
+
+        async function loadFiles() {
+            if (!currentPasskeyId) {
+                showStatus('Please authenticate first', true);
+                return;
+            }
+
+            try {
+                const encodedPasskeyId = encodeURIComponent(currentPasskeyId);
+                const response = await fetch(`/files/${encodedPasskeyId}`);
+
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
+                }
+
+                const data = await response.json();
+                currentFiles = data.files;
+
+                updateTagTree();
+                displayFiles();
+
+            } catch (error) {
+                console.error('Load files error:', error);
+                showStatus('Failed to load files', true);
+            }
+        }
+
+        function updateTagTree() {
+            // Extract unique tag paths from files
+            const tagPaths = new Set();
+            currentFiles.forEach(file => {
+                if (file.tags) {
+                    const parts = file.tags.split('/');
+                    for (let i = 0; i < parts.length; i++) {
+                        tagPaths.add(parts.slice(0, i + 1).join('/'));
+                    }
+                }
+            });
+
+            const tagTree = document.getElementById('tagTree');
+            // Keep the "All Files" option
+            const allFilesDiv = tagTree.querySelector('.tag-folder');
+            tagTree.innerHTML = '';
+            tagTree.appendChild(allFilesDiv);
+
+            // Add tag folders
+            Array.from(tagPaths).sort().forEach(tagPath => {
+                const parts = tagPath.split('/');
+                const displayName = parts[parts.length - 1];
+                const depth = parts.length - 1;
+
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'tag-folder';
+                folderDiv.innerHTML = `
+                    <div class="tag-folder-header" onclick="selectTag('${tagPath}')" style="margin-left: ${depth * 16}px">
+                        <span class="tag-folder-icon">📁</span>
+                        ${displayName}
+                    </div>
+                `;
+                tagTree.appendChild(folderDiv);
+            });
+        }
+
+        function selectTag(tag) {
+            currentTag = tag;
+
+            // Update active state
+            document.querySelectorAll('.tag-folder-header').forEach(header => {
+                header.classList.remove('active');
+            });
+            event.target.closest('.tag-folder-header').classList.add('active');
+
+            // Update current path display
+            const pathDisplay = document.getElementById('currentPath');
+            pathDisplay.textContent = tag ? `📁 ${tag}` : '📁 All Files';
+
+            displayFiles();
+        }
+
+        function displayFiles() {
+            const fileGrid = document.getElementById('fileGrid');
+            const filteredFiles = currentFiles.filter(file => {
+                // Filter by current tag
+                if (currentTag && !file.tags.startsWith(currentTag)) {
+                    return false;
+                }
+
+                // Filter by search
+                const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+                if (searchTerm && !file.filename.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            if (filteredFiles.length === 0) {
+                fileGrid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📄</div>
+                        <div>No files found</div>
+                        <div style="margin-top: 8px; font-size: 14px;">Create your first file to get started</div>
+                    </div>
+                `;
+                return;
+            }
+
+            fileGrid.innerHTML = filteredFiles.map(file => `
+                <div class="file-card" onclick="openFile('${file.id}', '${file.filename}')">
+                    <div class="file-icon">${getFileIcon(file.filename)}</div>
+                    <div class="file-name">${file.filename}</div>
+                    <div class="file-meta">
+                        <span>${file.version_count} version${file.version_count > 1 ? 's' : ''}</span>
+                        <span>${formatDate(file.updated_at)}</span>
+                    </div>
+                    ${file.tags ? `<div class="file-tags">${file.tags}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            switch (ext) {
+                case 'md': return '📝';
+                case 'txt': return '📄';
+                case 'js': return '📜';
+                case 'json': return '🔧';
+                case 'html': return '🌐';
+                case 'css': return '🎨';
+                default: return '📄';
+            }
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp * 1000);
+            const now = new Date();
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return `${diffDays} days ago`;
+            return date.toLocaleDateString();
+        }
+
+        function filterFiles() {
+            displayFiles();
+        }
+
+        function showCreateFileModal() {
+            document.getElementById('createFileModal').style.display = 'block';
+            document.getElementById('fileName').focus();
+        }
+
+        function closeCreateFileModal() {
+            document.getElementById('createFileModal').style.display = 'none';
+            document.getElementById('fileName').value = '';
+            document.getElementById('fileTags').value = '';
+            document.getElementById('fileContent').value = '';
+        }
+
+        async function createFile() {
+            const filename = document.getElementById('fileName').value.trim();
+            const tags = document.getElementById('fileTags').value.trim();
+            const content = document.getElementById('fileContent').value;
+
+            if (!filename) {
+                showStatus('Please enter a filename', true);
+                return;
+            }
+
+            if (!currentPasskeyId) {
+                showStatus('Please authenticate first', true);
+                return;
+            }
+
+            try {
+                closeCreateFileModal();
+                showStatus('Creating file...');
+
+                const response = await fetch('/files/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        tags: tags || '',
+                        content: content || '',
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('File creation failed');
+                }
+
+                showStatus(`✅ File "${filename}" created successfully!`);
+                loadFiles(); // Refresh the file list
+
+            } catch (error) {
+                console.error('Create file error:', error);
+                showStatus('Failed to create file: ' + error.message, true);
+            }
+        }
+
+        async function openFile(fileId, filename) {
+            if (!currentPasskeyId) {
+                showStatus('Please authenticate first', true);
+                return;
+            }
+
+            try {
+                showStatus('Loading file...');
+
+                const response = await fetch(`/files/${fileId}/content`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: fileId,
+                        version_id: null, // Get latest version
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load file');
+                }
+
+                const data = await response.json();
+
+                // Open file editor
+                currentEditingFile = { id: fileId, filename: filename };
+                document.getElementById('editorTitle').textContent = `📄 ${filename}`;
+                document.getElementById('fileEditor').value = data.content;
+                // Switch to editor view
+                document.getElementById('vaultSection').classList.add('hidden');
+                document.getElementById('fileEditorSection').classList.remove('hidden');
+                document.getElementById('editorStatus').textContent = 'Loaded';
+
+                // Setup auto-save functionality
+                setupAutoSave();
+
+                showStatus('');
+
+            } catch (error) {
+                console.error('Open file error:', error);
+                showStatus('Failed to open file: ' + error.message, true);
+            }
+        }
+
+        async function saveFile() {
+            if (!currentEditingFile || !currentPasskeyId) {
+                showStatus('No file to save', true);
+                return;
+            }
+
+            try {
+                document.getElementById('editorStatus').textContent = 'Saving...';
+                const content = document.getElementById('fileEditor').value;
+
+                showStatus('💾 Saving file...');
+
+                const response = await fetch(`/files/${currentEditingFile.id}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentEditingFile.id,
+                        content: content,
+                        change_summary: `Manual save at ${new Date().toLocaleTimeString()}`,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Save failed');
+                }
+
+                const data = await response.json();
+
+                // Update auto-save tracking
+                lastSavedContent = content;
+                hasUnsavedChanges = false;
+
+                document.getElementById('editorStatus').textContent = `Saved (v${data.version_number})`;
+                showStatus(`✅ "${currentEditingFile.filename}" saved successfully!`);
+
+            } catch (error) {
+                console.error('Save file error:', error);
+                document.getElementById('editorStatus').textContent = 'Save failed';
+                showStatus('Failed to save file: ' + error.message, true);
+            }
+        }
+
+        // Auto-save functionality
+        let autoSaveTimeout = null;
+        let lastSavedContent = '';
+        let hasUnsavedChanges = false;
+
+        function setupAutoSave() {
+            const editor = document.getElementById('fileEditor');
+            lastSavedContent = editor.value;
+            hasUnsavedChanges = false;
+
+            // Clear any existing listeners
+            editor.removeEventListener('input', handleEditorInput);
+
+            // Add input listener for auto-save
+            editor.addEventListener('input', handleEditorInput);
+        }
+
+        function handleEditorInput() {
+            const editor = document.getElementById('fileEditor');
+            const currentContent = editor.value;
+
+            // Check if content has changed
+            if (currentContent !== lastSavedContent) {
+                hasUnsavedChanges = true;
+                document.getElementById('editorStatus').textContent = 'Unsaved changes...';
+
+                // Clear existing timeout
+                if (autoSaveTimeout) {
+                    clearTimeout(autoSaveTimeout);
+                }
+
+                // Set new timeout for auto-save (3 seconds after stopping typing)
+                autoSaveTimeout = setTimeout(async () => {
+                    if (hasUnsavedChanges && currentEditingFile) {
+                        await autoSaveFile();
+                    }
+                }, 3000);
+            }
+        }
+
+        async function autoSaveFile() {
+            if (!currentEditingFile || !currentPasskeyId) return;
+
+            try {
+                const editor = document.getElementById('fileEditor');
+                const content = editor.value;
+
+                // Skip if content hasn't actually changed
+                if (content === lastSavedContent) {
+                    hasUnsavedChanges = false;
+                    return;
+                }
+
+                document.getElementById('editorStatus').textContent = 'Auto-saving...';
+
+                const response = await fetch(`/files/${currentEditingFile.id}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentEditingFile.id,
+                        content: content,
+                        change_summary: `Auto-save at ${new Date().toLocaleTimeString()}`,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Auto-save failed');
+                }
+
+                const data = await response.json();
+
+                lastSavedContent = content;
+                hasUnsavedChanges = false;
+                document.getElementById('editorStatus').textContent = `Auto-saved (v${data.version_number})`;
+
+            } catch (error) {
+                console.error('Auto-save error:', error);
+                document.getElementById('editorStatus').textContent = 'Auto-save failed';
+            }
+        }
+
+        function closeFileEditor() {
+            // Clear auto-save timeout
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
+                autoSaveTimeout = null;
+            }
+
+            // Remove event listeners
+            const editor = document.getElementById('fileEditor');
+            if (editor) {
+                editor.removeEventListener('input', handleEditorInput);
+            }
+
+            // Switch back to file browser view
+            document.getElementById('fileEditorSection').classList.add('hidden');
+            document.getElementById('vaultSection').classList.remove('hidden');
+            currentEditingFile = null;
+            hasUnsavedChanges = false;
+            lastSavedContent = '';
+        }
+
+        // Handle Enter key in modals
         document.addEventListener('keydown', function(event) {
-            const modal = document.getElementById('onboardingModal');
-            if (modal.style.display === 'block') {
+            const onboardingModal = document.getElementById('onboardingModal');
+            const createFileModal = document.getElementById('createFileModal');
+            const editorSection = document.getElementById('fileEditorSection');
+
+            if (onboardingModal.style.display === 'block') {
                 if (event.key === 'Enter') {
                     event.preventDefault();
                     proceedWithVaultCreation();
@@ -649,15 +1334,39 @@
                     event.preventDefault();
                     closeModal();
                 }
+            } else if (createFileModal.style.display === 'block') {
+                if (event.key === 'Enter' && event.ctrlKey) {
+                    event.preventDefault();
+                    createFile();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeCreateFileModal();
+                }
+            } else if (!editorSection.classList.contains('hidden')) {
+                if (event.key === 's' && event.ctrlKey) {
+                    event.preventDefault();
+                    saveFile();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeFileEditor();
+                }
             }
         });
 
-        // Close modal when clicking outside
+        // Close modals when clicking outside
         document.getElementById('onboardingModal').addEventListener('click', function(event) {
             if (event.target === this) {
                 closeModal();
             }
         });
+
+        document.getElementById('createFileModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeCreateFileModal();
+            }
+        });
+
+        // Editor modal event listener removed - now using full-screen editor
 
         // Check if WebAuthn is supported
         if (!window.PublicKeyCredential) {

@@ -3,8 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use webauthn_rs::{
-    prelude::{CreationChallengeResponse, RequestChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential},
+use webauthn_rs::prelude::{
+    CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
+    RequestChallengeResponse,
 };
 
 // WebAuthn related types
