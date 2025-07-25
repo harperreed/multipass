@@ -18,8 +18,8 @@ pub async fn security_headers(request: Request<Body>, next: Next) -> Response {
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
             "default-src 'self'; \
-             script-src 'self' 'unsafe-inline'; \
-             style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; \
+             script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; \
+             style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; \
              font-src 'self' https://fonts.gstatic.com; \
              img-src 'self' data:; \
              connect-src 'self'; \
