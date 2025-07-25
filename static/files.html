@@ -403,8 +403,8 @@
             emptyState.classList.add('hidden');
 
             filesList.innerHTML = filteredFiles.map(file => `
-                <div class="flex items-center justify-between p-3 border rounded-md hover:bg-slate-50 cursor-pointer" onclick="openFile('${file.id}', '${file.filename}')">
-                    <div class="flex items-center flex-1">
+                <div class="flex items-center justify-between p-3 border rounded-md hover:bg-slate-50">
+                    <div class="flex items-center flex-1 cursor-pointer" onclick="openFile('${file.id}', '${file.filename}')">
                         <div class="text-2xl mr-3">${getFileIcon(file.filename)}</div>
                         <div>
                             <div class="font-medium">${highlightSearchTerm(file.filename, searchTerm)}</div>
@@ -414,11 +414,20 @@
                             </div>
                         </div>
                     </div>
-                    <button onclick="event.stopPropagation(); deleteFile('${file.id}', '${file.filename}')" class="p-1 hover:bg-gray-100 rounded ml-2">
-                        <svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </button>
+                    <div class="flex items-center gap-1">
+                        <button onclick="showFileInfoModal('${file.id}', '${file.filename}', '${file.tags || ''}', ${file.version_count}, ${file.updated_at})"
+                                class="p-1 hover:bg-gray-100 rounded" title="File info">
+                            <svg class="icon text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </button>
+                        <button onclick="deleteFile('${file.id}', '${file.filename}')"
+                                class="p-1 hover:bg-gray-100 rounded" title="Delete file">
+                            <svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -555,9 +564,82 @@
             }
         });
 
-        // Handle Enter key in create file modal
+
+        // File Info Modal Functions
+        let currentEditingFileId = null;
+
+        function showFileInfoModal(fileId, filename, tags, versionCount, updatedAt) {
+            currentEditingFileId = fileId;
+
+            document.getElementById('infoFileIcon').textContent = getFileIcon(filename);
+            document.getElementById('infoFileName').textContent = filename;
+            document.getElementById('infoFileTags').value = tags || '';
+            document.getElementById('infoVersionCount').textContent = `${versionCount} version${versionCount > 1 ? 's' : ''}`;
+            document.getElementById('infoLastUpdated').textContent = formatDate(updatedAt);
+
+            document.getElementById('fileInfoModal').classList.remove('hidden');
+            document.getElementById('infoFileTags').focus();
+        }
+
+        function closeFileInfoModal() {
+            document.getElementById('fileInfoModal').classList.add('hidden');
+            currentEditingFileId = null;
+        }
+
+        async function saveFileInfo() {
+            if (!currentEditingFileId || !currentPasskeyId) {
+                showToast('Error', 'No file selected or not authenticated', 'error');
+                return;
+            }
+
+            const newTags = document.getElementById('infoFileTags').value.trim();
+
+            try {
+                // Note: We'll need to add a new backend endpoint for updating file metadata
+                // For now, show a placeholder message
+                showToast('Info', 'Tag editing will be implemented with backend support', 'error');
+                closeFileInfoModal();
+
+                // TODO: Implement actual tag updating once backend endpoint exists
+                // const response = await fetch(`/files/${currentEditingFileId}/metadata`, {
+                //     method: 'PATCH',
+                //     headers: { 'Content-Type': 'application/json' },
+                //     body: JSON.stringify({
+                //         tags: newTags,
+                //         passkey_id: currentPasskeyId
+                //     })
+                // });
+                //
+                // if (!response.ok) {
+                //     throw new Error('Failed to update file metadata');
+                // }
+                //
+                // showToast('Success', 'File tags updated successfully!');
+                // loadFiles(); // Refresh the file list
+
+            } catch (error) {
+                console.error('Update file error:', error);
+                showToast('Error', 'Failed to update file: ' + error.message, 'error');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('createFileModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeCreateFileModal();
+            }
+        });
+
+        document.getElementById('fileInfoModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeFileInfoModal();
+            }
+        });
+
+        // Handle Enter key in file info modal
         document.addEventListener('keydown', function(event) {
             const createModal = document.getElementById('createFileModal');
+            const infoModal = document.getElementById('fileInfoModal');
 
             if (!createModal.classList.contains('hidden')) {
                 if (event.key === 'Enter' && event.ctrlKey) {
@@ -567,13 +649,14 @@
                     event.preventDefault();
                     closeCreateFileModal();
                 }
-            }
-        });
-
-        // Close modal when clicking outside
-        document.getElementById('createFileModal').addEventListener('click', function(event) {
-            if (event.target === this) {
-                closeCreateFileModal();
+            } else if (!infoModal.classList.contains('hidden')) {
+                if (event.key === 'Enter' && event.ctrlKey) {
+                    event.preventDefault();
+                    saveFileInfo();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeFileInfoModal();
+                }
             }
         });
 
