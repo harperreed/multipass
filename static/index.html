@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiPass - Secure Data with Passkeys</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #4a5568;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        
+        .section h2 {
+            color: #2d3748;
+            margin-top: 0;
+        }
+        
+        .subsection {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #4299e1;
+        }
+        
+        .subsection h3 {
+            color: #2d3748;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .secret-item {
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .secret-title {
+            font-weight: 500;
+            color: #2d3748;
+        }
+        
+        .secret-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .secret-actions button {
+            width: auto;
+            padding: 6px 12px;
+            margin: 0;
+            font-size: 12px;
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .modal h3 {
+            color: #2d3748;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .modal p {
+            color: #718096;
+            margin-bottom: 20px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .modal-buttons button {
+            flex: 1;
+        }
+        
+        .cancel-btn {
+            background: #a0aec0 !important;
+        }
+        
+        input, textarea, button {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background: #4299e1;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background: #3182ce;
+        }
+        
+        button:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        
+        .success {
+            color: #38a169;
+            font-weight: 500;
+        }
+        
+        .error {
+            color: #e53e3e;
+            font-weight: 500;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .data-item {
+            background: #f7fafc;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .data-item strong {
+            color: #2d3748;
+        }
+        
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 MultiPass</h1>
+        <p style="text-align: center; color: #718096;">Secure your data with passkey authentication</p>
+        
+        <div id="status"></div>
+        
+        <div class="section" id="authSection">
+            <h2>🔐 MultiPass Vault</h2>
+            <p>Passwordless security with your device's built-in authentication</p>
+            <button onclick="createVault()">🆕 Create New Vault</button>
+            <button onclick="loginToVault()">🔑 Access My Vault</button>
+        </div>
+        
+        <div class="section hidden" id="vaultSection">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>🗄️ Your Encrypted Vault</h2>
+                <button onclick="logout()" style="width: auto; background: #e53e3e;">🚪 Logout</button>
+            </div>
+            
+            <div class="subsection">
+                <h3>📝 Add New Secret</h3>
+                <input type="text" id="secretTitle" placeholder="Title (e.g., 'Bank Password', 'API Key')" required>
+                <textarea id="secretData" placeholder="Enter secret data..." rows="3"></textarea>
+                <button onclick="addSecret()">🔒 Encrypt & Store</button>
+            </div>
+            
+            <div class="subsection">
+                <h3>📋 Your Secrets</h3>
+                <div id="secretsList"></div>
+                <button onclick="refreshSecrets()">🔄 Refresh List</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Onboarding Modal -->
+    <div id="onboardingModal" class="modal">
+        <div class="modal-content">
+            <h3>🔐 Create Your Vault</h3>
+            <p>Give your vault a memorable name so you can easily identify it later.</p>
+            <input type="text" id="vaultName" placeholder="e.g., 'Work Passwords', 'Personal Vault', 'Home'" required>
+            <div class="modal-buttons">
+                <button onclick="closeModal()" class="cancel-btn">Cancel</button>
+                <button onclick="proceedWithVaultCreation()">Create Vault</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPasskeyId = null;
+        let currentUserId = null;
+
+        // Convert base64url string to Uint8Array
+        function base64urlToUint8Array(base64url) {
+            if (!base64url) {
+                console.error('base64urlToUint8Array received undefined/null value:', base64url);
+                return new Uint8Array(0);
+            }
+            if (typeof base64url !== 'string') {
+                console.error('base64urlToUint8Array expected string but got:', typeof base64url, base64url);
+                return new Uint8Array(0);
+            }
+            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            const binary = atob(padded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Convert array of numbers to Uint8Array
+        function arrayToUint8Array(arr) {
+            return new Uint8Array(arr);
+        }
+
+        // Prepare credential creation options for the browser
+        function prepareCreationOptions(options) {
+            console.log('Preparing creation options, input:', options);
+            
+            if (!options) {
+                throw new Error('Creation options is null or undefined');
+            }
+
+            // Map webauthn-rs field names to browser WebAuthn API field names
+            const result = {
+                // Core required fields
+                challenge: options.challenge ? (
+                    Array.isArray(options.challenge) 
+                        ? arrayToUint8Array(options.challenge)
+                        : base64urlToUint8Array(options.challenge)
+                ) : new Uint8Array(0),
+                
+                rp: options.rp || options.relying_party || {
+                    name: "MultiPass",
+                    id: "localhost"
+                },
+                
+                user: options.user ? {
+                    id: options.user.id ? (
+                        Array.isArray(options.user.id)
+                            ? arrayToUint8Array(options.user.id)
+                            : base64urlToUint8Array(options.user.id)
+                    ) : new Uint8Array(0),
+                    name: options.user.name || options.user.username || "",
+                    displayName: options.user.displayName || options.user.display_name || options.user.name || ""
+                } : {},
+                
+                // Map possible field name variations for pubKeyCredParams
+                pubKeyCredParams: options.pubKeyCredParams || 
+                                options.pub_key_cred_params || 
+                                options.publicKeyCredentialParameters ||
+                                options.cred_params ||
+                                [
+                                    { type: "public-key", alg: -7 },  // ES256
+                                    { type: "public-key", alg: -257 } // RS256
+                                ],
+                
+                authenticatorSelection: options.authenticatorSelection || options.authenticator_selection || {},
+                attestation: options.attestation || "none",
+                timeout: options.timeout || 60000,
+                
+                excludeCredentials: options.excludeCredentials?.map(cred => ({
+                    ...cred,
+                    id: cred.id ? (
+                        Array.isArray(cred.id)
+                            ? arrayToUint8Array(cred.id)
+                            : base64urlToUint8Array(cred.id)
+                    ) : new Uint8Array(0)
+                })) || []
+            };
+
+            console.log('Prepared creation options, output:', result);
+            return result;
+        }
+
+        // Prepare credential request options for authentication
+        function prepareRequestOptions(options) {
+            console.log('Preparing request options, input:', options);
+            
+            if (!options) {
+                throw new Error('Request options is null or undefined');
+            }
+
+            const result = {
+                ...options,
+                challenge: options.challenge ? (
+                    Array.isArray(options.challenge) 
+                        ? arrayToUint8Array(options.challenge)
+                        : base64urlToUint8Array(options.challenge)
+                ) : new Uint8Array(0),
+                
+                allowCredentials: options.allowCredentials?.map(cred => ({
+                    ...cred,
+                    id: cred.id ? (
+                        Array.isArray(cred.id)
+                            ? arrayToUint8Array(cred.id)
+                            : base64urlToUint8Array(cred.id)
+                    ) : new Uint8Array(0)
+                })) || [],
+                
+                timeout: options.timeout || 60000,
+                userVerification: options.userVerification || "preferred"
+            };
+
+            console.log('Prepared request options, output:', result);
+            return result;
+        }
+
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = isError ? 'error' : 'success';
+            setTimeout(() => {
+                status.textContent = '';
+                status.className = '';
+            }, 5000);
+        }
+
+        function createVault() {
+            // Show the onboarding modal instead of immediately creating
+            document.getElementById('onboardingModal').style.display = 'block';
+            document.getElementById('vaultName').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('onboardingModal').style.display = 'none';
+            document.getElementById('vaultName').value = '';
+        }
+
+        async function proceedWithVaultCreation() {
+            const vaultName = document.getElementById('vaultName').value.trim();
+            
+            if (!vaultName) {
+                showStatus('Please enter a name for your vault', true);
+                return;
+            }
+
+            closeModal();
+
+            try {
+                // Generate a unique identifier but use the user's name for display
+                const vaultId = crypto.randomUUID();
+
+                // Start registration with user's chosen name
+                const startResponse = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: vaultId, display_name: vaultName })
+                });
+
+                if (!startResponse.ok) {
+                    const errorData = await startResponse.json();
+                    throw new Error(errorData.message || 'Registration failed');
+                }
+
+                const responseData = await startResponse.json();
+                console.log('Full registration response:', responseData);
+                
+                const { user_id, creation_options } = responseData;
+                console.log('Creation options received:', creation_options);
+                console.log('Creation options keys:', Object.keys(creation_options));
+                
+                // webauthn-rs wraps the actual options in a publicKey field
+                const actualOptions = creation_options.publicKey;
+                console.log('Actual options to use:', actualOptions);
+                console.log('Actual options keys:', Object.keys(actualOptions));
+                
+                // Check for required WebAuthn fields
+                console.log('pubKeyCredParams:', actualOptions.pubKeyCredParams);
+                console.log('challenge:', actualOptions.challenge);
+                console.log('rp:', actualOptions.rp);
+                console.log('user:', actualOptions.user);
+
+                // Prepare options with proper binary data conversion using the actual options
+                const preparedOptions = prepareCreationOptions(actualOptions);
+                console.log('Prepared options:', preparedOptions);
+
+                // Create credential
+                const credential = await navigator.credentials.create({
+                    publicKey: preparedOptions
+                });
+
+                // Finish registration
+                const finishResponse = await fetch('/register/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id,
+                        credential: {
+                            id: credential.id,
+                            rawId: Array.from(new Uint8Array(credential.rawId)),
+                            response: {
+                                clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
+                                attestationObject: Array.from(new Uint8Array(credential.response.attestationObject))
+                            },
+                            type: credential.type
+                        }
+                    })
+                });
+
+                if (!finishResponse.ok) {
+                    throw new Error('Registration completion failed');
+                }
+
+                const { passkey_id } = await finishResponse.json();
+                currentPasskeyId = passkey_id;
+                currentUserId = user_id;
+
+                showStatus(`✅ "${vaultName}" vault created successfully!`);
+                document.getElementById('authSection').classList.add('hidden');
+                document.getElementById('vaultSection').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Registration error:', error);
+                showStatus('Registration failed: ' + error.message, true);
+            }
+        }
+
+        async function loginToVault() {
+            try {
+                // Use discoverable credentials - let the authenticator show available passkeys
+                showStatus('Touch your device to access your vault...');
+                
+                const credential = await navigator.credentials.get({
+                    publicKey: {
+                        challenge: new Uint8Array(32), // Dummy challenge for discovery
+                        allowCredentials: [], // Empty = allow any registered credential
+                        userVerification: 'preferred',
+                        timeout: 60000
+                    }
+                });
+
+                // Send the credential to identify the user
+                const identifyResponse = await fetch('/identify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        credential_id: credential.id
+                    })
+                });
+
+                if (!identifyResponse.ok) {
+                    throw new Error('Could not identify your vault. You may need to create a new one.');
+                }
+
+                const { passkey_id, user_id } = await identifyResponse.json();
+                currentPasskeyId = passkey_id;
+                currentUserId = user_id;
+
+                showStatus(`✅ Vault accessed successfully!`);
+                document.getElementById('authSection').classList.add('hidden');
+                document.getElementById('vaultSection').classList.remove('hidden');
+                refreshSecrets();
+
+            } catch (error) {
+                console.error('Authentication error:', error);
+                showStatus('Could not access vault: ' + error.message, true);
+            }
+        }
+
+        async function addSecret() {
+            if (!currentPasskeyId) {
+                showStatus('Please authenticate first', true);
+                return;
+            }
+
+            const title = document.getElementById('secretTitle').value;
+            const data = document.getElementById('secretData').value;
+            
+            if (!title || !data) {
+                showStatus('Please enter both title and data', true);
+                return;
+            }
+
+            try {
+                const response = await fetch('/encrypt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        data: data,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Encryption failed');
+                }
+
+                showStatus(`✅ Secret "${title}" encrypted and stored!`);
+                document.getElementById('secretTitle').value = '';
+                document.getElementById('secretData').value = '';
+                refreshSecrets();
+
+            } catch (error) {
+                console.error('Encryption error:', error);
+                showStatus('Encryption failed: ' + error.message, true);
+            }
+        }
+
+        async function refreshSecrets() {
+            if (!currentPasskeyId) return;
+
+            try {
+                // URL encode the passkey ID to handle special characters like /
+                const encodedPasskeyId = encodeURIComponent(currentPasskeyId);
+                const response = await fetch(`/list_secrets/${encodedPasskeyId}`);
+                if (!response.ok) throw new Error('Failed to fetch secrets');
+
+                const { secrets } = await response.json();
+                const secretsList = document.getElementById('secretsList');
+                
+                if (secrets.length === 0) {
+                    secretsList.innerHTML = '<p style="color: #718096; text-align: center;">No secrets stored yet</p>';
+                    return;
+                }
+
+                secretsList.innerHTML = secrets.map(secret => `
+                    <div class="secret-item">
+                        <div class="secret-title">${secret.title}</div>
+                        <div class="secret-actions">
+                            <button onclick="viewSecret('${secret.id}', '${secret.title}')">👁️ View</button>
+                            <button onclick="deleteSecret('${secret.id}', '${secret.title}')" style="background: #e53e3e;">🗑️ Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Failed to refresh secrets:', error);
+                showStatus('Failed to load secrets', true);
+            }
+        }
+
+        async function viewSecret(secretId, title) {
+            try {
+                const response = await fetch('/decrypt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        encrypted_data: secretId,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) throw new Error('Decryption failed');
+
+                const { data } = await response.json();
+                
+                // Show in a modal/alert for now (could be improved with a proper modal)
+                alert(`${title}:\n\n${data}`);
+                
+            } catch (error) {
+                console.error('Decryption error:', error);
+                showStatus(`Failed to decrypt "${title}"`, true);
+            }
+        }
+
+        async function deleteSecret(secretId, title) {
+            if (!confirm(`Are you sure you want to delete "${title}"?`)) return;
+
+            try {
+                const response = await fetch(`/delete_secret/${secretId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) throw new Error('Delete failed');
+
+                showStatus(`✅ Secret "${title}" deleted`);
+                refreshSecrets();
+                
+            } catch (error) {
+                console.error('Delete error:', error);
+                showStatus(`Failed to delete "${title}"`, true);
+            }
+        }
+
+        function logout() {
+            currentPasskeyId = null;
+            currentUserId = null;
+            document.getElementById('vaultSection').classList.add('hidden');
+            document.getElementById('authSection').classList.remove('hidden');
+            document.getElementById('secretsList').innerHTML = '';
+            showStatus('Logged out successfully');
+        }
+
+        // Handle Enter key in modal
+        document.addEventListener('keydown', function(event) {
+            const modal = document.getElementById('onboardingModal');
+            if (modal.style.display === 'block') {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    proceedWithVaultCreation();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeModal();
+                }
+            }
+        });
+
+        // Close modal when clicking outside
+        document.getElementById('onboardingModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeModal();
+            }
+        });
+
+        // Check if WebAuthn is supported
+        if (!window.PublicKeyCredential) {
+            showStatus('WebAuthn is not supported in this browser', true);
+        }
+    </script>
+</body>
+</html>
