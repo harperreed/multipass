@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiPass - Secure Data with Passkeys</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .icon {
+            width: 1rem;
+            height: 1rem;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .icon-lg {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="w-full max-w-md bg-white rounded-lg border shadow-sm">
+            <div class="p-6 text-center">
+                <h1 class="text-2xl font-semibold">MultiPass</h1>
+                <p class="text-sm text-gray-600 mt-2">Enterprise Secure File Management with Passkey Authentication</p>
+            </div>
+            <div class="px-6 pb-4 flex justify-center">
+                <div class="h-24 w-24 mb-4 bg-gray-200 rounded-lg flex items-center justify-center">
+                    <svg class="icon-lg text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                </div>
+            </div>
+            <div class="p-6 pt-0 space-y-3">
+                <button
+                    onclick="createVault()"
+                    class="w-full bg-black text-white py-2 px-4 rounded-md hover:bg-gray-800 flex items-center justify-center gap-2"
+                >
+                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    Create New Vault
+                </button>
+                <button
+                    onclick="accessVault()"
+                    class="w-full bg-gray-100 text-gray-900 py-2 px-4 rounded-md hover:bg-gray-200 border flex items-center justify-center gap-2"
+                >
+                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-3a1 1 0 011-1h2.586l6.243-6.243A6 6 0 0121 9z"></path>
+                    </svg>
+                    Access My Vault
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Messages -->
+    <div id="statusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <div class="text-center">
+                <div id="statusIcon" class="mx-auto mb-4"></div>
+                <h3 id="statusTitle" class="text-lg font-semibold mb-2"></h3>
+                <p id="statusMessage" class="text-gray-600 mb-4"></p>
+                <button onclick="hideStatus()" class="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-800">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Vault Modal -->
+    <div id="createVaultModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <h3 class="text-lg font-semibold mb-4">Create Your Vault</h3>
+            <p class="text-gray-600 mb-4">Give your vault a memorable name so you can easily identify it later.</p>
+            <input
+                type="text"
+                id="vaultName"
+                placeholder="e.g., 'Work Files', 'Personal Vault'"
+                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                required
+            >
+            <div class="flex gap-2">
+                <button onclick="closeCreateVaultModal()" class="flex-1 bg-gray-100 text-gray-900 py-2 px-4 rounded-md hover:bg-gray-200">
+                    Cancel
+                </button>
+                <button onclick="proceedWithVaultCreation()" class="flex-1 bg-black text-white py-2 px-4 rounded-md hover:bg-gray-800">
+                    Create Vault
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Convert base64url string to Uint8Array
+        function base64urlToUint8Array(base64url) {
+            if (!base64url) {
+                console.error('base64urlToUint8Array received undefined/null value:', base64url);
+                return new Uint8Array(0);
+            }
+            if (typeof base64url !== 'string') {
+                console.error('base64urlToUint8Array expected string but got:', typeof base64url, base64url);
+                return new Uint8Array(0);
+            }
+            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            const binary = atob(padded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Convert array of numbers to Uint8Array
+        function arrayToUint8Array(arr) {
+            return new Uint8Array(arr);
+        }
+
+        // Prepare credential creation options for the browser
+        function prepareCreationOptions(options) {
+            console.log('Preparing creation options, input:', options);
+
+            if (!options) {
+                throw new Error('Creation options is null or undefined');
+            }
+
+            const result = {
+                challenge: options.challenge ? (
+                    Array.isArray(options.challenge)
+                        ? arrayToUint8Array(options.challenge)
+                        : base64urlToUint8Array(options.challenge)
+                ) : new Uint8Array(0),
+
+                rp: options.rp || options.relying_party || {
+                    name: "MultiPass",
+                    id: "localhost"
+                },
+
+                user: options.user ? {
+                    id: options.user.id ? (
+                        Array.isArray(options.user.id)
+                            ? arrayToUint8Array(options.user.id)
+                            : base64urlToUint8Array(options.user.id)
+                    ) : new Uint8Array(0),
+                    name: options.user.name || options.user.username || "",
+                    displayName: options.user.displayName || options.user.display_name || options.user.name || ""
+                } : {},
+
+                pubKeyCredParams: options.pubKeyCredParams ||
+                                options.pub_key_cred_params ||
+                                options.publicKeyCredentialParameters ||
+                                options.cred_params ||
+                                [
+                                    { type: "public-key", alg: -7 },  // ES256
+                                    { type: "public-key", alg: -257 } // RS256
+                                ],
+
+                authenticatorSelection: options.authenticatorSelection || options.authenticator_selection || {},
+                attestation: options.attestation || "none",
+                timeout: options.timeout || 60000,
+
+                excludeCredentials: options.excludeCredentials?.map(cred => ({
+                    ...cred,
+                    id: cred.id ? (
+                        Array.isArray(cred.id)
+                            ? arrayToUint8Array(cred.id)
+                            : base64urlToUint8Array(cred.id)
+                    ) : new Uint8Array(0)
+                })) || []
+            };
+
+            console.log('Prepared creation options, output:', result);
+            return result;
+        }
+
+        function showStatus(title, message, isError = false) {
+            const modal = document.getElementById('statusModal');
+            const icon = document.getElementById('statusIcon');
+            const titleEl = document.getElementById('statusTitle');
+            const messageEl = document.getElementById('statusMessage');
+
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+
+            if (isError) {
+                icon.innerHTML = '<div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto"><svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></div>';
+            } else {
+                icon.innerHTML = '<div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto"><svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>';
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function hideStatus() {
+            document.getElementById('statusModal').classList.add('hidden');
+        }
+
+        function createVault() {
+            document.getElementById('createVaultModal').classList.remove('hidden');
+            document.getElementById('vaultName').focus();
+        }
+
+        function closeCreateVaultModal() {
+            document.getElementById('createVaultModal').classList.add('hidden');
+            document.getElementById('vaultName').value = '';
+        }
+
+        async function proceedWithVaultCreation() {
+            const vaultName = document.getElementById('vaultName').value.trim();
+
+            if (!vaultName) {
+                showStatus('Error', 'Please enter a name for your vault', true);
+                return;
+            }
+
+            closeCreateVaultModal();
+
+            try {
+                const vaultId = crypto.randomUUID();
+
+                const startResponse = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: vaultId, display_name: vaultName })
+                });
+
+                if (!startResponse.ok) {
+                    const errorData = await startResponse.json();
+                    throw new Error(errorData.message || 'Registration failed');
+                }
+
+                const responseData = await startResponse.json();
+                const { user_id, creation_options } = responseData;
+                const actualOptions = creation_options.publicKey;
+                const preparedOptions = prepareCreationOptions(actualOptions);
+
+                const credential = await navigator.credentials.create({
+                    publicKey: preparedOptions
+                });
+
+                const finishResponse = await fetch('/register/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id,
+                        credential: {
+                            id: credential.id,
+                            rawId: Array.from(new Uint8Array(credential.rawId)),
+                            response: {
+                                clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
+                                attestationObject: Array.from(new Uint8Array(credential.response.attestationObject))
+                            },
+                            type: credential.type
+                        }
+                    })
+                });
+
+                if (!finishResponse.ok) {
+                    throw new Error('Registration completion failed');
+                }
+
+                const { passkey_id } = await finishResponse.json();
+
+                // Store auth info and redirect to file browser
+                localStorage.setItem('passkey_id', passkey_id);
+                localStorage.setItem('vault_name', vaultName);
+
+                showStatus('Success', `"${vaultName}" vault created successfully!`);
+                setTimeout(() => {
+                    window.location.href = '/files.html';
+                }, 2000);
+
+            } catch (error) {
+                console.error('Registration error:', error);
+                showStatus('Error', 'Registration failed: ' + error.message, true);
+            }
+        }
+
+        async function accessVault() {
+            try {
+                showStatus('Authentication', 'Touch your device to access your vault...');
+
+                const credential = await navigator.credentials.get({
+                    publicKey: {
+                        challenge: new Uint8Array(32),
+                        allowCredentials: [],
+                        userVerification: 'preferred',
+                        timeout: 60000
+                    }
+                });
+
+                const identifyResponse = await fetch('/identify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        credential_id: credential.id
+                    })
+                });
+
+                if (!identifyResponse.ok) {
+                    throw new Error('Could not identify your vault. You may need to create a new one.');
+                }
+
+                const { passkey_id, user_id } = await identifyResponse.json();
+
+                // Store auth info and redirect to file browser
+                localStorage.setItem('passkey_id', passkey_id);
+                localStorage.setItem('user_id', user_id);
+
+                hideStatus();
+                window.location.href = '/files.html';
+
+            } catch (error) {
+                console.error('Authentication error:', error);
+                showStatus('Error', 'Could not access vault: ' + error.message, true);
+            }
+        }
+
+        // Handle Enter key in modals
+        document.addEventListener('keydown', function(event) {
+            const createModal = document.getElementById('createVaultModal');
+
+            if (!createModal.classList.contains('hidden')) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    proceedWithVaultCreation();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeCreateVaultModal();
+                }
+            }
+        });
+
+        // Close modals when clicking outside
+        document.getElementById('createVaultModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeCreateVaultModal();
+            }
+        });
+
+        document.getElementById('statusModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                hideStatus();
+            }
+        });
+
+        // Check if WebAuthn is supported
+        if (!window.PublicKeyCredential) {
+            showStatus('Error', 'WebAuthn is not supported in this browser', true);
+        }
+    </script>
+</body>
+</html>

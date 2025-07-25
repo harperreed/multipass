@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Editor - MultiPass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .icon {
+            width: 1rem;
+            height: 1rem;
+            display: inline-block;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container max-w-4xl mx-auto py-10 px-4" id="editorContainer">
+        <div class="bg-white rounded-lg border shadow-sm">
+            <div class="p-6 border-b flex items-center justify-between">
+                <div class="flex items-center">
+                    <button onclick="goBack()" class="p-1 hover:bg-gray-100 rounded mr-2">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                    </button>
+                    <h1 class="text-xl font-semibold" id="fileName">Loading...</h1>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="editorStatus" class="text-sm text-gray-500">Ready</span>
+                    <button
+                        onclick="saveFile()"
+                        class="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
+                    >
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        Save (Ctrl+S)
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <textarea
+                    id="fileContent"
+                    class="w-full h-96 p-4 border rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="Start typing..."
+                ></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading state -->
+    <div id="loadingState" class="container max-w-4xl mx-auto py-10 px-4">
+        <div class="bg-white rounded-lg border shadow-sm">
+            <div class="p-6 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                <div class="text-gray-600">Loading file...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="fixed top-4 right-4 bg-white border rounded-lg shadow-lg p-4 hidden z-50">
+        <div class="flex items-center gap-2">
+            <div id="toastIcon"></div>
+            <div>
+                <div id="toastTitle" class="font-medium"></div>
+                <div id="toastMessage" class="text-sm text-gray-600"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = null;
+        let currentPasskeyId = null;
+        let autoSaveTimeout = null;
+        let lastSavedContent = '';
+        let hasUnsavedChanges = false;
+
+        function showToast(title, message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastTitle.textContent = title;
+            toastMessage.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.innerHTML = '<svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            } else {
+                toastIcon.innerHTML = '<svg class="icon text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+            }
+
+            toast.classList.remove('hidden');
+
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        function initializeEditor() {
+            // Check if user is authenticated
+            currentPasskeyId = localStorage.getItem('passkey_id');
+            if (!currentPasskeyId) {
+                window.location.href = '/';
+                return;
+            }
+
+            const fileId = localStorage.getItem('current_file_id');
+            const fileName = localStorage.getItem('current_file_name');
+
+            if (!fileId || !fileName) {
+                showToast('Error', 'No file specified', 'error');
+                setTimeout(() => {
+                    window.location.href = '/files.html';
+                }, 2000);
+                return;
+            }
+
+            currentFile = { id: fileId, filename: fileName };
+            document.getElementById('fileName').textContent = fileName;
+
+            loadFileContent();
+        }
+
+        async function loadFileContent() {
+            if (!currentFile || !currentPasskeyId) return;
+
+            try {
+                const response = await fetch(`/files/${currentFile.id}/content`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFile.id,
+                        version_id: null, // Get latest version
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load file');
+                }
+
+                const data = await response.json();
+
+                document.getElementById('fileContent').value = data.content;
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('editorContainer').style.display = 'block';
+                document.getElementById('editorStatus').textContent = 'Loaded';
+
+                // Setup auto-save functionality
+                setupAutoSave();
+                lastSavedContent = data.content;
+
+            } catch (error) {
+                console.error('Load file error:', error);
+                showToast('Error', 'Failed to load file: ' + error.message, 'error');
+                setTimeout(() => {
+                    window.location.href = '/files.html';
+                }, 2000);
+            }
+        }
+
+        async function saveFile() {
+            if (!currentFile || !currentPasskeyId) {
+                showToast('Error', 'No file to save', 'error');
+                return;
+            }
+
+            try {
+                document.getElementById('editorStatus').textContent = 'Saving...';
+                const content = document.getElementById('fileContent').value;
+
+                const response = await fetch(`/files/${currentFile.id}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFile.id,
+                        content: content,
+                        change_summary: `Manual save at ${new Date().toLocaleTimeString()}`,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Save failed');
+                }
+
+                const data = await response.json();
+
+                // Update auto-save tracking
+                lastSavedContent = content;
+                hasUnsavedChanges = false;
+
+                document.getElementById('editorStatus').textContent = `Saved (v${data.version_number})`;
+                showToast('Success', `"${currentFile.filename}" saved successfully!`);
+
+            } catch (error) {
+                console.error('Save file error:', error);
+                document.getElementById('editorStatus').textContent = 'Save failed';
+                showToast('Error', 'Failed to save file: ' + error.message, 'error');
+            }
+        }
+
+        // Auto-save functionality
+        function setupAutoSave() {
+            const editor = document.getElementById('fileContent');
+
+            // Clear any existing listeners
+            editor.removeEventListener('input', handleEditorInput);
+
+            // Add input listener for auto-save
+            editor.addEventListener('input', handleEditorInput);
+        }
+
+        function handleEditorInput() {
+            const editor = document.getElementById('fileContent');
+            const currentContent = editor.value;
+
+            // Check if content has changed
+            if (currentContent !== lastSavedContent) {
+                hasUnsavedChanges = true;
+                document.getElementById('editorStatus').textContent = 'Unsaved changes...';
+
+                // Clear existing timeout
+                if (autoSaveTimeout) {
+                    clearTimeout(autoSaveTimeout);
+                }
+
+                // Set new timeout for auto-save (3 seconds after stopping typing)
+                autoSaveTimeout = setTimeout(async () => {
+                    if (hasUnsavedChanges && currentFile) {
+                        await autoSaveFile();
+                    }
+                }, 3000);
+            }
+        }
+
+        async function autoSaveFile() {
+            if (!currentFile || !currentPasskeyId) return;
+
+            try {
+                const editor = document.getElementById('fileContent');
+                const content = editor.value;
+
+                // Skip if content hasn't actually changed
+                if (content === lastSavedContent) {
+                    hasUnsavedChanges = false;
+                    return;
+                }
+
+                document.getElementById('editorStatus').textContent = 'Auto-saving...';
+
+                const response = await fetch(`/files/${currentFile.id}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFile.id,
+                        content: content,
+                        change_summary: `Auto-save at ${new Date().toLocaleTimeString()}`,
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Auto-save failed');
+                }
+
+                const data = await response.json();
+
+                lastSavedContent = content;
+                hasUnsavedChanges = false;
+                document.getElementById('editorStatus').textContent = `Auto-saved (v${data.version_number})`;
+
+            } catch (error) {
+                console.error('Auto-save error:', error);
+                document.getElementById('editorStatus').textContent = 'Auto-save failed';
+            }
+        }
+
+        function goBack() {
+            // Clear auto-save timeout
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
+                autoSaveTimeout = null;
+            }
+
+            // Check for unsaved changes
+            if (hasUnsavedChanges) {
+                if (confirm('You have unsaved changes. Are you sure you want to leave?')) {
+                    window.location.href = '/files.html';
+                }
+            } else {
+                window.location.href = '/files.html';
+            }
+        }
+
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+S or Cmd+S to save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveFile();
+            }
+
+            // Escape to go back (with unsaved changes check)
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                goBack();
+            }
+        });
+
+        // Warn before leaving page if there are unsaved changes
+        window.addEventListener('beforeunload', function(e) {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Initialize the editor when page loads
+        window.addEventListener('load', function() {
+            // Hide editor initially
+            document.getElementById('editorContainer').style.display = 'none';
+
+            initializeEditor();
+        });
+    </script>
+</body>
+</html>

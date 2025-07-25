@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser - MultiPass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .icon {
+            width: 1rem;
+            height: 1rem;
+            display: inline-block;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container max-w-4xl mx-auto py-10 px-4">
+        <div class="bg-white rounded-lg border shadow-sm">
+            <div class="p-6 border-b flex items-center justify-between">
+                <h1 class="text-xl font-semibold">MultiPass File Browser</h1>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-600" id="userDisplay">Loading...</span>
+                    <button
+                        onclick="handleLogout()"
+                        class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                    >
+                        Logout
+                    </button>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="flex items-center space-x-2 mb-6">
+                    <input
+                        type="text"
+                        id="newFileName"
+                        placeholder="New file name"
+                        class="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <button
+                        onclick="showCreateFileModal()"
+                        class="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
+                    >
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        Create
+                    </button>
+                </div>
+
+                <div id="filesList" class="space-y-2">
+                    <!-- Files will be populated here -->
+                </div>
+
+                <div id="emptyState" class="text-center py-10 text-gray-500 hidden">
+                    <div class="text-5xl mb-4">📄</div>
+                    <div class="text-lg mb-2">No files yet</div>
+                    <div class="text-sm">Create your first file to get started</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="fixed top-4 right-4 bg-white border rounded-lg shadow-lg p-4 hidden z-50">
+        <div class="flex items-center gap-2">
+            <div id="toastIcon"></div>
+            <div>
+                <div id="toastTitle" class="font-medium"></div>
+                <div id="toastMessage" class="text-sm text-gray-600"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create File Modal -->
+    <div id="createFileModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-lg font-semibold mb-4">Create New File</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="fileName" class="block text-sm font-medium text-gray-700 mb-1">File Name</label>
+                    <input
+                        type="text"
+                        id="fileName"
+                        placeholder="e.g., 'meeting-notes.md', 'passwords.txt'"
+                        class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                </div>
+                <div>
+                    <label for="fileTags" class="block text-sm font-medium text-gray-700 mb-1">Tags (optional)</label>
+                    <input
+                        type="text"
+                        id="fileTags"
+                        placeholder="e.g., 'work/meetings' or 'personal/passwords'"
+                        class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <p class="text-xs text-gray-500 mt-1">Use forward slashes to create folders: 'docs/work/projects'</p>
+                </div>
+                <div>
+                    <label for="fileContent" class="block text-sm font-medium text-gray-700 mb-1">Initial Content (optional)</label>
+                    <textarea
+                        id="fileContent"
+                        placeholder="Start typing your content here..."
+                        class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
+                        rows="4"
+                    ></textarea>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-6">
+                <button onclick="closeCreateFileModal()" class="flex-1 bg-gray-100 text-gray-900 py-2 px-4 rounded-md hover:bg-gray-200">
+                    Cancel
+                </button>
+                <button onclick="createFile()" class="flex-1 bg-black text-white py-2 px-4 rounded-md hover:bg-gray-800">
+                    Create File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPasskeyId = null;
+        let currentUserId = null;
+        let files = [];
+
+        function showToast(title, message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastTitle.textContent = title;
+            toastMessage.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.innerHTML = '<svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            } else {
+                toastIcon.innerHTML = '<svg class="icon text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+            }
+
+            toast.classList.remove('hidden');
+
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        function initializeApp() {
+            // Check if user is authenticated
+            currentPasskeyId = localStorage.getItem('passkey_id');
+            currentUserId = localStorage.getItem('user_id');
+            const vaultName = localStorage.getItem('vault_name');
+
+            if (!currentPasskeyId) {
+                // Redirect to login if not authenticated
+                window.location.href = '/';
+                return;
+            }
+
+            document.getElementById('userDisplay').textContent = vaultName ? `Vault: ${vaultName}` : 'Authenticated';
+            loadFiles();
+        }
+
+        async function loadFiles() {
+            if (!currentPasskeyId) {
+                showToast('Error', 'Please authenticate first', 'error');
+                return;
+            }
+
+            try {
+                const encodedPasskeyId = encodeURIComponent(currentPasskeyId);
+                const response = await fetch(`/files/${encodedPasskeyId}`);
+
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
+                }
+
+                const data = await response.json();
+                files = data.files;
+                renderFiles();
+
+            } catch (error) {
+                console.error('Load files error:', error);
+                showToast('Error', 'Failed to load files: ' + error.message, 'error');
+            }
+        }
+
+        function renderFiles() {
+            const filesList = document.getElementById('filesList');
+            const emptyState = document.getElementById('emptyState');
+
+            if (files.length === 0) {
+                filesList.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            filesList.innerHTML = files.map(file => `
+                <div class="flex items-center justify-between p-3 border rounded-md hover:bg-slate-50">
+                    <div class="flex items-center cursor-pointer flex-1" onclick="openFile('${file.id}', '${file.filename}')">
+                        <div class="text-2xl mr-3">${getFileIcon(file.filename)}</div>
+                        <div>
+                            <div class="font-medium">${file.filename}</div>
+                            <div class="text-sm text-gray-500">
+                                ${file.version_count} version${file.version_count > 1 ? 's' : ''} • ${formatDate(file.updated_at)}
+                                ${file.tags ? ` • ${file.tags}` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="deleteFile('${file.id}', '${file.filename}')" class="p-1 hover:bg-gray-100 rounded ml-2">
+                        <svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            switch (ext) {
+                case 'md': return '📝';
+                case 'txt': return '📄';
+                case 'js': return '📜';
+                case 'json': return '🔧';
+                case 'html': return '🌐';
+                case 'css': return '🎨';
+                case 'py': return '🐍';
+                case 'rs': return '🦀';
+                default: return '📄';
+            }
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp * 1000);
+            const now = new Date();
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return `${diffDays} days ago`;
+            return date.toLocaleDateString();
+        }
+
+        function showCreateFileModal() {
+            const fileName = document.getElementById('newFileName').value.trim();
+            if (fileName) {
+                document.getElementById('fileName').value = fileName;
+                document.getElementById('newFileName').value = '';
+            }
+            document.getElementById('createFileModal').classList.remove('hidden');
+            document.getElementById('fileName').focus();
+        }
+
+        function closeCreateFileModal() {
+            document.getElementById('createFileModal').classList.add('hidden');
+            document.getElementById('fileName').value = '';
+            document.getElementById('fileTags').value = '';
+            document.getElementById('fileContent').value = '';
+        }
+
+        async function createFile() {
+            const filename = document.getElementById('fileName').value.trim();
+            const tags = document.getElementById('fileTags').value.trim();
+            const content = document.getElementById('fileContent').value;
+
+            if (!filename) {
+                showToast('Error', 'Please enter a filename', 'error');
+                return;
+            }
+
+            if (!currentPasskeyId) {
+                showToast('Error', 'Please authenticate first', 'error');
+                return;
+            }
+
+            try {
+                closeCreateFileModal();
+                showToast('Creating', 'Creating file...');
+
+                const response = await fetch('/files/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        tags: tags || '',
+                        content: content || '',
+                        passkey_id: currentPasskeyId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('File creation failed');
+                }
+
+                showToast('Success', `File "${filename}" created successfully!`);
+                loadFiles(); // Refresh the file list
+
+            } catch (error) {
+                console.error('Create file error:', error);
+                showToast('Error', 'Failed to create file: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteFile(fileId, filename) {
+            if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+                return;
+            }
+
+            try {
+                // Note: This endpoint doesn't exist yet in the backend
+                // For now, we'll show a message that delete isn't implemented
+                showToast('Info', 'Delete functionality coming soon', 'error');
+
+            } catch (error) {
+                console.error('Delete file error:', error);
+                showToast('Error', 'Failed to delete file: ' + error.message, 'error');
+            }
+        }
+
+        function openFile(fileId, filename) {
+            // Store the file info for the editor
+            localStorage.setItem('current_file_id', fileId);
+            localStorage.setItem('current_file_name', filename);
+            window.location.href = '/editor.html';
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('passkey_id');
+            localStorage.removeItem('user_id');
+            localStorage.removeItem('vault_name');
+            localStorage.removeItem('current_file_id');
+            localStorage.removeItem('current_file_name');
+            window.location.href = '/';
+        }
+
+        // Handle Enter key in new file input
+        document.getElementById('newFileName').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                showCreateFileModal();
+            }
+        });
+
+        // Handle Enter key in create file modal
+        document.addEventListener('keydown', function(event) {
+            const createModal = document.getElementById('createFileModal');
+
+            if (!createModal.classList.contains('hidden')) {
+                if (event.key === 'Enter' && event.ctrlKey) {
+                    event.preventDefault();
+                    createFile();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeCreateFileModal();
+                }
+            }
+        });
+
+        // Close modal when clicking outside
+        document.getElementById('createFileModal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                closeCreateFileModal();
+            }
+        });
+
+        // Initialize the app when page loads
+        window.addEventListener('load', function() {
+            initializeApp();
+        });
+    </script>
+</body>
+</html>

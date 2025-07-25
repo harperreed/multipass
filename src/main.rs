@@ -78,7 +78,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Build our application with routes
     let app = Router::new()
-        .route("/", get(index))
+        .route("/", get(login_page))
+        .route("/files.html", get(files_page))
+        .route("/editor.html", get(editor_page))
         .route("/register", post(auth::register_start))
         .route("/register/finish", post(auth::register_finish))
         .route("/authenticate", post(auth::authenticate_start))
@@ -131,8 +133,16 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn index() -> Html<&'static str> {
-    Html(include_str!("../static/index.html"))
+async fn login_page() -> Html<&'static str> {
+    Html(include_str!("../static/login.html"))
+}
+
+async fn files_page() -> Html<&'static str> {
+    Html(include_str!("../static/files.html"))
+}
+
+async fn editor_page() -> Html<&'static str> {
+    Html(include_str!("../static/editor.html"))
 }
 
 async fn encrypt_data(
