@@ -15,7 +15,7 @@
     </style>
 </head>
 <body class="bg-gray-50">
-    <div class="container max-w-4xl mx-auto py-10 px-4">
+    <div class="container max-w-6xl mx-auto py-10 px-4">
         <div class="bg-white rounded-lg border shadow-sm">
             <div class="p-6 border-b flex items-center justify-between">
                 <h1 class="text-xl font-semibold">MultiPass File Browser</h1>
@@ -29,33 +29,64 @@
                     </button>
                 </div>
             </div>
-            <div class="p-6">
-                <div class="flex items-center space-x-2 mb-6">
-                    <input
-                        type="text"
-                        id="newFileName"
-                        placeholder="New file name"
-                        class="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                    <button
-                        onclick="showCreateFileModal()"
-                        class="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
-                    >
-                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                        </svg>
-                        Create
-                    </button>
+
+            <div class="flex h-[600px]">
+                <!-- Sidebar -->
+                <div class="w-64 bg-gray-50 border-r overflow-y-auto">
+                    <div class="p-4">
+                        <h3 class="font-medium text-gray-900 mb-3">📂 Organization</h3>
+                        <div id="tagTree" class="space-y-1">
+                            <!-- Tag hierarchy will be populated here -->
+                        </div>
+                    </div>
                 </div>
 
-                <div id="filesList" class="space-y-2">
-                    <!-- Files will be populated here -->
-                </div>
+                <!-- Main Content -->
+                <div class="flex-1 flex flex-col">
+                    <div class="p-6 border-b">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2 text-sm text-gray-600">
+                                <span>📁</span>
+                                <span id="currentPath">All Files</span>
+                            </div>
+                            <input
+                                type="text"
+                                id="searchBox"
+                                placeholder="Search files and tags..."
+                                class="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                                oninput="filterFiles()"
+                            >
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                id="newFileName"
+                                placeholder="New file name"
+                                class="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                            <button
+                                onclick="showCreateFileModal()"
+                                class="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
+                            >
+                                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Create
+                            </button>
+                        </div>
+                    </div>
 
-                <div id="emptyState" class="text-center py-10 text-gray-500 hidden">
-                    <div class="text-5xl mb-4">📄</div>
-                    <div class="text-lg mb-2">No files yet</div>
-                    <div class="text-sm">Create your first file to get started</div>
+                    <div class="flex-1 p-6 overflow-y-auto">
+                        <div id="filesList" class="space-y-2">
+                            <!-- Files will be populated here -->
+                        </div>
+
+                        <div id="emptyState" class="text-center py-10 text-gray-500 hidden">
+                            <div class="text-5xl mb-4">📄</div>
+                            <div class="text-lg mb-2">No files found</div>
+                            <div class="text-sm">Try adjusting your search or create a new file</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -118,10 +149,67 @@
         </div>
     </div>
 
+    <!-- File Info Modal -->
+    <div id="fileInfoModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">File Information</h3>
+                <button onclick="closeFileInfoModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">File Name</label>
+                    <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-md">
+                        <span id="infoFileIcon" class="text-lg"></span>
+                        <span id="infoFileName" class="font-medium"></span>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="infoFileTags" class="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                    <input
+                        type="text"
+                        id="infoFileTags"
+                        placeholder="e.g., 'work/meetings' or 'personal/passwords'"
+                        class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <p class="text-xs text-gray-500 mt-1">Use forward slashes to create folders: 'docs/work/projects'</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 pt-2 border-t">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Versions</label>
+                        <div class="text-sm text-gray-600" id="infoVersionCount">-</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Last Updated</label>
+                        <div class="text-sm text-gray-600" id="infoLastUpdated">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+                <button onclick="closeFileInfoModal()" class="flex-1 bg-gray-100 text-gray-900 py-2 px-4 rounded-md hover:bg-gray-200">
+                    Cancel
+                </button>
+                <button onclick="saveFileInfo()" class="flex-1 bg-black text-white py-2 px-4 rounded-md hover:bg-gray-800">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentPasskeyId = null;
         let currentUserId = null;
         let files = [];
+        let currentTag = '';
+        let tagHierarchy = {};
 
         function showToast(title, message, type = 'success') {
             const toast = document.getElementById('toast');
@@ -177,6 +265,8 @@
 
                 const data = await response.json();
                 files = data.files;
+                buildTagHierarchy();
+                renderTagTree();
                 renderFiles();
 
             } catch (error) {
@@ -185,11 +275,126 @@
             }
         }
 
+        function buildTagHierarchy() {
+            tagHierarchy = {};
+
+            files.forEach(file => {
+                if (file.tags) {
+                    const parts = file.tags.split('/');
+                    let current = tagHierarchy;
+
+                    parts.forEach((part, index) => {
+                        if (!current[part]) {
+                            current[part] = {
+                                children: {},
+                                files: [],
+                                fullPath: parts.slice(0, index + 1).join('/')
+                            };
+                        }
+                        current[part].files.push(file);
+                        current = current[part].children;
+                    });
+                }
+            });
+        }
+
+        function renderTagTree() {
+            const tagTree = document.getElementById('tagTree');
+
+            // Add "All Files" option
+            tagTree.innerHTML = `
+                <div class="cursor-pointer px-2 py-1 rounded hover:bg-gray-200 ${currentTag === '' ? 'bg-blue-100 text-blue-700' : ''}"
+                     onclick="selectTag('')">
+                    <div class="flex items-center gap-2">
+                        <span>📄</span>
+                        <span class="text-sm font-medium">All Files</span>
+                        <span class="text-xs text-gray-500">(${files.length})</span>
+                    </div>
+                </div>
+            `;
+
+            // Add tag hierarchy
+            renderTagNode(tagTree, tagHierarchy, 0);
+        }
+
+        function renderTagNode(container, nodes, depth) {
+            Object.keys(nodes).sort().forEach(key => {
+                const node = nodes[key];
+                const indent = depth * 16;
+
+                const nodeElement = document.createElement('div');
+                nodeElement.className = `cursor-pointer px-2 py-1 rounded hover:bg-gray-200 ${currentTag === node.fullPath ? 'bg-blue-100 text-blue-700' : ''}`;
+                nodeElement.style.marginLeft = `${indent}px`;
+                nodeElement.onclick = () => selectTag(node.fullPath);
+
+                const hasChildren = Object.keys(node.children).length > 0;
+                const folderIcon = hasChildren ? '📁' : '🏷️';
+
+                nodeElement.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span>${folderIcon}</span>
+                        <span class="text-sm">${key}</span>
+                        <span class="text-xs text-gray-500">(${getUniqueFileCount(node)})</span>
+                    </div>
+                `;
+
+                container.appendChild(nodeElement);
+
+                // Recursively render children
+                if (hasChildren) {
+                    renderTagNode(container, node.children, depth + 1);
+                }
+            });
+        }
+
+        function getUniqueFileCount(node) {
+            const uniqueFiles = new Set();
+
+            function addFiles(n) {
+                n.files.forEach(file => uniqueFiles.add(file.id));
+                Object.values(n.children).forEach(child => addFiles(child));
+            }
+
+            addFiles(node);
+            return uniqueFiles.size;
+        }
+
+        function selectTag(tag) {
+            currentTag = tag;
+            document.getElementById('currentPath').textContent = tag ? `📁 ${tag}` : 'All Files';
+            renderTagTree(); // Update active state
+            renderFiles();
+        }
+
+        function filterFiles() {
+            renderFiles();
+        }
+
         function renderFiles() {
             const filesList = document.getElementById('filesList');
             const emptyState = document.getElementById('emptyState');
+            const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
 
-            if (files.length === 0) {
+            // Filter files based on current tag and search term
+            let filteredFiles = files.filter(file => {
+                // Filter by current tag
+                if (currentTag && (!file.tags || !file.tags.startsWith(currentTag))) {
+                    return false;
+                }
+
+                // Filter by search term (filename and tags)
+                if (searchTerm) {
+                    const matchesFilename = file.filename.toLowerCase().includes(searchTerm);
+                    const matchesTags = file.tags && file.tags.toLowerCase().includes(searchTerm);
+                    if (!matchesFilename && !matchesTags) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            if (filteredFiles.length === 0) {
                 filesList.innerHTML = '';
                 emptyState.classList.remove('hidden');
                 return;
@@ -197,25 +402,32 @@
 
             emptyState.classList.add('hidden');
 
-            filesList.innerHTML = files.map(file => `
-                <div class="flex items-center justify-between p-3 border rounded-md hover:bg-slate-50">
-                    <div class="flex items-center cursor-pointer flex-1" onclick="openFile('${file.id}', '${file.filename}')">
+            filesList.innerHTML = filteredFiles.map(file => `
+                <div class="flex items-center justify-between p-3 border rounded-md hover:bg-slate-50 cursor-pointer" onclick="openFile('${file.id}', '${file.filename}')">
+                    <div class="flex items-center flex-1">
                         <div class="text-2xl mr-3">${getFileIcon(file.filename)}</div>
                         <div>
-                            <div class="font-medium">${file.filename}</div>
+                            <div class="font-medium">${highlightSearchTerm(file.filename, searchTerm)}</div>
                             <div class="text-sm text-gray-500">
                                 ${file.version_count} version${file.version_count > 1 ? 's' : ''} • ${formatDate(file.updated_at)}
-                                ${file.tags ? ` • ${file.tags}` : ''}
+                                ${file.tags ? ` • ${highlightSearchTerm(file.tags, searchTerm)}` : ''}
                             </div>
                         </div>
                     </div>
-                    <button onclick="deleteFile('${file.id}', '${file.filename}')" class="p-1 hover:bg-gray-100 rounded ml-2">
+                    <button onclick="event.stopPropagation(); deleteFile('${file.id}', '${file.filename}')" class="p-1 hover:bg-gray-100 rounded ml-2">
                         <svg class="icon text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                         </svg>
                     </button>
                 </div>
             `).join('');
+        }
+
+        function highlightSearchTerm(text, searchTerm) {
+            if (!searchTerm || !text) return text;
+
+            const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<mark class="bg-yellow-200">$1</mark>');
         }
 
         function getFileIcon(filename) {
