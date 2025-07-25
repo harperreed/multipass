@@ -5,3 +5,4 @@ pub mod credential;
 pub mod file;
 pub mod file_version;
 pub mod user;
+pub mod zero_knowledge_data;

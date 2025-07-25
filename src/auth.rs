@@ -2,6 +2,7 @@
 // ABOUTME: Handles registration and authentication flows for secure passkey-based auth
 
 use axum::{extract::State, http::StatusCode, response::Json};
+use axum_extra::extract::cookie::CookieJar;
 use base64::Engine;
 use serde_json::json;
 use std::collections::HashMap;
@@ -12,8 +13,8 @@ use webauthn_rs::{
     prelude::{Passkey, PasskeyAuthentication, PasskeyRegistration},
 };
 
-use crate::AppState;
 use crate::types::*;
+use crate::{AppState, session};
 
 #[derive(Clone)]
 pub struct AuthState {
@@ -136,8 +137,9 @@ pub async fn register_start(
 
 pub async fn register_finish(
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(req): Json<RegisterFinishRequest>,
-) -> Result<Json<RegisterFinishResponse>, StatusCode> {
+) -> Result<(CookieJar, Json<RegisterFinishResponse>), StatusCode> {
     // Retrieve registration session
     let registration_session = state
         .auth
@@ -162,10 +164,24 @@ pub async fn register_finish(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(RegisterFinishResponse {
-        success: true,
-        passkey_id: credential_id,
-    }))
+    // Create session and set cookie
+    let session_id =
+        state
+            .sessions
+            .create_session(req.user_id, credential_id.clone(), req.vault_name.clone());
+
+    // Determine if we should use secure cookies (HTTPS)
+    let is_secure = false; // TODO: detect from request or config
+    let session_cookie = session::create_session_cookie(session_id, is_secure);
+    let jar = jar.add(session_cookie);
+
+    Ok((
+        jar,
+        Json(RegisterFinishResponse {
+            success: true,
+            passkey_id: credential_id,
+        }),
+    ))
 }
 
 pub async fn authenticate_start(
@@ -249,8 +265,9 @@ pub async fn authenticate_start(
 #[axum::debug_handler]
 pub async fn authenticate_finish(
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(req): Json<AuthenticateFinishRequest>,
-) -> Result<Json<AuthenticateFinishResponse>, StatusCode> {
+) -> Result<(CookieJar, Json<AuthenticateFinishResponse>), StatusCode> {
     // Find the right authentication session
     let (auth_success, _session_to_remove) = {
         let mut sessions = state.auth.authentication_sessions.lock().unwrap();
@@ -293,9 +310,43 @@ pub async fn authenticate_finish(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(AuthenticateFinishResponse {
-        success: true,
-        passkey_id: credential_id,
-        user_id: stored_cred.user_id,
-    }))
+    // Create session and set cookie
+    let session_id = state.sessions.create_session(
+        stored_cred.user_id,
+        credential_id.clone(),
+        None, // vault name not available at login
+    );
+
+    // Determine if we should use secure cookies (HTTPS)
+    let is_secure = false; // TODO: detect from request or config
+    let session_cookie = session::create_session_cookie(session_id, is_secure);
+    let jar = jar.add(session_cookie);
+
+    Ok((
+        jar,
+        Json(AuthenticateFinishResponse {
+            success: true,
+            passkey_id: credential_id,
+            user_id: stored_cred.user_id,
+        }),
+    ))
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<serde_json::Value>), StatusCode> {
+    // Extract session from cookie and remove it
+    if let Ok(_session_data) = session::extract_session_from_jar(&jar, &state.sessions) {
+        // Find the session ID from the cookie
+        if let Some(session_cookie) = jar.get("multipass_session") {
+            state.sessions.remove_session(session_cookie.value());
+        }
+    }
+
+    // Create a logout cookie that expires immediately
+    let logout_cookie = session::create_logout_cookie();
+    let jar = jar.add(logout_cookie);
+
+    Ok((jar, Json(serde_json::json!({"success": true}))))
 }

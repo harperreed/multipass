@@ -1,10 +1,15 @@
 // ABOUTME: Zero-knowledge server endpoints that only store encrypted blobs
 // ABOUTME: Server never sees plaintext data or has ability to decrypt
 
-use axum::{extract::{Path, State}, http::StatusCode, response::Json};
+use crate::entities::zero_knowledge_data;
+use crate::{AppState, error};
+use axum::{
+    extract::{Path, State},
+    response::Json,
+};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EncryptedBlob {
@@ -34,31 +39,29 @@ pub struct GetEncryptedResponse {
 pub async fn store_encrypted(
     State(state): State<AppState>,
     Json(req): Json<StoreEncryptedRequest>,
-) -> Result<Json<StoreEncryptedResponse>, StatusCode> {
+) -> error::Result<Json<StoreEncryptedResponse>> {
     let data_id = Uuid::new_v4();
-    
+
     // Get the credential to find the user_id (for access control)
-    let credential = state.storage.get_credential(&req.passkey_id).await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-    
+    let credential = state
+        .storage
+        .get_credential(&req.passkey_id)
+        .await
+        .map_err(|_| error::AppError::Unauthorized("Invalid passkey ID".to_string()))?;
+
     // Store the encrypted blob directly (no server-side decryption possible)
-    sqlx::query(
-        r#"
-        INSERT INTO zero_knowledge_data (id, user_id, passkey_id, ciphertext, salt, iv, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        "#
-    )
-    .bind(data_id.to_string())
-    .bind(credential.user_id.to_string())
-    .bind(&req.passkey_id)
-    .bind(&req.encrypted_blob.ciphertext)
-    .bind(&req.encrypted_blob.salt)
-    .bind(&req.encrypted_blob.iv)
-    .bind(chrono::Utc::now().timestamp())
-    .execute(&state.storage.pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    
+    let zero_knowledge_data = zero_knowledge_data::ActiveModel {
+        id: Set(data_id.to_string()),
+        user_id: Set(credential.user_id),
+        passkey_id: Set(req.passkey_id.clone()),
+        ciphertext: Set(req.encrypted_blob.ciphertext.clone()),
+        salt: Set(req.encrypted_blob.salt.clone()),
+        iv: Set(req.encrypted_blob.iv.clone()),
+        created_at: Set(chrono::Utc::now().timestamp()),
+    };
+
+    zero_knowledge_data.insert(&state.storage.db).await?;
+
     Ok(Json(StoreEncryptedResponse {
         data_id: data_id.to_string(),
         success: true,
@@ -69,43 +72,19 @@ pub async fn store_encrypted(
 pub async fn get_encrypted(
     Path(data_id): Path<String>,
     State(state): State<AppState>,
-) -> Result<Json<GetEncryptedResponse>, StatusCode> {
-    let row = sqlx::query(
-        "SELECT ciphertext, salt, iv FROM zero_knowledge_data WHERE id = ?"
-    )
-    .bind(&data_id)
-    .fetch_one(&state.storage.pool)
-    .await
-    .map_err(|_| StatusCode::NOT_FOUND)?;
-    
+) -> error::Result<Json<GetEncryptedResponse>> {
+    let zero_knowledge_model = zero_knowledge_data::Entity::find_by_id(&data_id)
+        .one(&state.storage.db)
+        .await?
+        .ok_or_else(|| {
+            error::AppError::NotFound(format!("Encrypted data {} not found", data_id))
+        })?;
+
     Ok(Json(GetEncryptedResponse {
         encrypted_blob: EncryptedBlob {
-            ciphertext: row.get("ciphertext"),
-            salt: row.get("salt"),
-            iv: row.get("iv"),
+            ciphertext: zero_knowledge_model.ciphertext,
+            salt: zero_knowledge_model.salt,
+            iv: zero_knowledge_model.iv,
         },
     }))
-}
-
-// Add this to storage.rs initialize_schema function:
-pub async fn add_zero_knowledge_table(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS zero_knowledge_data (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            passkey_id TEXT NOT NULL,
-            ciphertext BLOB NOT NULL,
-            salt BLOB NOT NULL,
-            iv BLOB NOT NULL,
-            created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (passkey_id) REFERENCES credentials (id)
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-    
-    Ok(())
 }

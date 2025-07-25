@@ -180,10 +180,63 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Create zero_knowledge_data table
+        manager
+            .create_table(
+                Table::create()
+                    .table(ZeroKnowledgeData::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(ZeroKnowledgeData::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(ZeroKnowledgeData::UserId).uuid().not_null())
+                    .col(
+                        ColumnDef::new(ZeroKnowledgeData::PasskeyId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(ZeroKnowledgeData::Ciphertext)
+                            .blob()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(ZeroKnowledgeData::Salt).blob().not_null())
+                    .col(ColumnDef::new(ZeroKnowledgeData::Iv).blob().not_null())
+                    .col(
+                        ColumnDef::new(ZeroKnowledgeData::CreatedAt)
+                            .big_integer()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_zero_knowledge_user_id")
+                            .from(ZeroKnowledgeData::Table, ZeroKnowledgeData::UserId)
+                            .to(Users::Table, Users::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_zero_knowledge_passkey_id")
+                            .from(ZeroKnowledgeData::Table, ZeroKnowledgeData::PasskeyId)
+                            .to(Credentials::Table, Credentials::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(ZeroKnowledgeData::Table).to_owned())
+            .await?;
+
         manager
             .drop_table(Table::drop().table(FileVersions::Table).to_owned())
             .await?;
@@ -248,5 +301,17 @@ enum FileVersions {
     Salt,
     ContentHash,
     ChangeSummary,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum ZeroKnowledgeData {
+    Table,
+    Id,
+    UserId,
+    PasskeyId,
+    Ciphertext,
+    Salt,
+    Iv,
     CreatedAt,
 }

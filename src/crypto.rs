@@ -14,9 +14,23 @@ use uuid::Uuid;
 use crate::storage::Storage;
 use crate::types::EncryptedData;
 
-const KEY_SIZE: usize = 32; // 256 bits for ChaCha20Poly1305
-const NONCE_SIZE: usize = 12; // 96 bits for ChaCha20Poly1305
-const SALT_SIZE: usize = 16; // 128 bits salt for Argon2
+pub const KEY_SIZE: usize = 32; // 256 bits for ChaCha20Poly1305
+pub const NONCE_SIZE: usize = 12; // 96 bits for ChaCha20Poly1305
+pub const SALT_SIZE: usize = 16; // 128 bits salt for Argon2
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct EncryptionMaterials {
+    pub salt: [u8; SALT_SIZE],
+    pub nonce: [u8; NONCE_SIZE],
+    pub encrypted_data: Vec<u8>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct DecryptionResult {
+    pub plaintext: String,
+}
 
 pub async fn encrypt_data(
     plaintext: &str,
@@ -87,7 +101,51 @@ pub async fn decrypt_data(
     String::from_utf8(plaintext).map_err(|_| anyhow!("Invalid UTF-8 in decrypted data"))
 }
 
-fn derive_key(passkey_id: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE]> {
+/// Generate random encryption materials (salt and nonce)
+pub fn generate_encryption_materials() -> ([u8; SALT_SIZE], [u8; NONCE_SIZE]) {
+    let mut salt = [0u8; SALT_SIZE];
+    let mut nonce = [0u8; NONCE_SIZE];
+    OsRng.fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut nonce);
+    (salt, nonce)
+}
+
+/// Encrypt data with provided materials (for consistent encryption across the app)
+pub fn encrypt_with_materials(
+    plaintext: &str,
+    passkey_id: &str,
+    salt: &[u8; SALT_SIZE],
+    nonce: &[u8; NONCE_SIZE],
+) -> Result<Vec<u8>> {
+    let key = derive_key(passkey_id, salt)?;
+    let cipher = ChaCha20Poly1305::new_from_slice(&key).map_err(|_| anyhow!("Invalid key size"))?;
+    let nonce_obj = Nonce::from_slice(nonce);
+
+    cipher
+        .encrypt(nonce_obj, plaintext.as_bytes())
+        .map_err(|_| anyhow!("Encryption failed"))
+}
+
+/// Decrypt data with provided materials
+pub fn decrypt_with_materials(
+    encrypted_data: &[u8],
+    passkey_id: &str,
+    salt: &[u8],
+    nonce: &[u8],
+) -> Result<String> {
+    let key = derive_key(passkey_id, salt)?;
+    let cipher = ChaCha20Poly1305::new_from_slice(&key).map_err(|_| anyhow!("Invalid key size"))?;
+    let nonce_obj = Nonce::from_slice(nonce);
+
+    let plaintext = cipher
+        .decrypt(nonce_obj, encrypted_data)
+        .map_err(|_| anyhow!("Decryption failed"))?;
+
+    String::from_utf8(plaintext).map_err(|_| anyhow!("Invalid UTF-8 in decrypted data"))
+}
+
+/// Make derive_key public for external use
+pub fn derive_key(passkey_id: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE]> {
     let argon2 = Argon2::default();
     let salt_string = SaltString::encode_b64(salt).map_err(|_| anyhow!("Failed to encode salt"))?;
 

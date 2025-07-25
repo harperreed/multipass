@@ -8,6 +8,7 @@ use axum::{
     response::{Html, Json},
     routing::{delete, get, post},
 };
+use axum_extra::extract::cookie::CookieJar;
 use clap::Parser;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -15,13 +16,19 @@ use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
 mod auth;
+mod auth_helpers;
 mod crypto;
 mod entities;
+mod error;
+mod middleware;
 mod migration;
+mod session;
 mod storage;
 mod types;
+mod zero_knowledge;
 
 use auth::AuthState;
+use session::SessionStore;
 use storage::Storage;
 
 #[derive(Parser)]
@@ -54,6 +61,7 @@ struct Args {
 pub struct AppState {
     pub auth: AuthState,
     pub storage: Arc<Storage>,
+    pub sessions: SessionStore,
 }
 
 #[tokio::main]
@@ -74,7 +82,14 @@ async fn main() -> anyhow::Result<()> {
     let webauthn_host = args.public_host.as_ref().unwrap_or(&args.host);
     let auth = AuthState::new_with_config(webauthn_host, args.port, use_https)?;
 
-    let app_state = AppState { auth, storage };
+    // Initialize session store
+    let sessions = SessionStore::new();
+
+    let app_state = AppState {
+        auth,
+        storage,
+        sessions,
+    };
 
     // Build our application with routes
     let app = Router::new()
@@ -85,15 +100,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/register/finish", post(auth::register_finish))
         .route("/authenticate", post(auth::authenticate_start))
         .route("/authenticate/finish", post(auth::authenticate_finish))
+        .route("/logout", post(auth::logout))
         .route("/encrypt", post(encrypt_data))
         .route("/decrypt", post(decrypt_data))
         .route("/list_secrets/:passkey_id", get(list_secrets))
         .route("/delete_secret/:data_id", delete(delete_secret))
         .route("/files/create", post(create_file))
-        .route("/files/:passkey_id", get(get_files))
+        .route("/files", get(get_files))
         .route("/files/:file_id/content", post(get_file_content))
         .route("/files/:file_id/save", post(save_file_version))
         .route("/identify", post(identify_user))
+        .route(
+            "/zero-knowledge/store",
+            post(zero_knowledge::store_encrypted),
+        )
+        .route(
+            "/zero-knowledge/:data_id",
+            get(zero_knowledge::get_encrypted),
+        )
+        .layer(axum::middleware::from_fn(
+            crate::middleware::security_headers,
+        ))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
@@ -216,7 +243,7 @@ async fn delete_secret(
 async fn identify_user(
     State(state): State<AppState>,
     Json(req): Json<types::IdentifyRequest>,
-) -> Result<Json<types::IdentifyResponse>, StatusCode> {
+) -> error::Result<Json<types::IdentifyResponse>> {
     println!(
         "Attempting to identify credential ID: {}",
         req.credential_id
@@ -263,42 +290,36 @@ async fn identify_user(
     }
 
     println!("Credential not found with either method");
-    Err(StatusCode::NOT_FOUND)
+    Err(error::AppError::NotFound(format!(
+        "Credential {} not found",
+        req.credential_id
+    )))
 }
 
 async fn create_file(
     State(state): State<AppState>,
-    Json(req): Json<types::CreateFileRequest>,
-) -> Result<Json<types::CreateFileResponse>, StatusCode> {
-    // Get the user ID from the credential
-    let credential = state
-        .storage
-        .get_credential(&req.passkey_id)
-        .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    jar: CookieJar,
+    Json(mut req): Json<types::CreateFileRequest>,
+) -> error::Result<Json<types::CreateFileResponse>> {
+    // Validate session and get user info
+    let (user_id, passkey_id) = auth_helpers::get_user_info_from_session(&jar, &state)?;
 
-    let response = state
-        .storage
-        .create_file(&req, credential.user_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Override the passkey_id from session for security
+    req.passkey_id = passkey_id;
+
+    let response = state.storage.create_file(&req, user_id).await?;
 
     Ok(Json(response))
 }
 
 async fn get_files(
-    Path(passkey_id): Path<String>,
     State(state): State<AppState>,
-) -> Result<Json<types::FileBrowserResponse>, StatusCode> {
-    // URL decode the passkey ID to handle special characters
-    let decoded_passkey_id =
-        urlencoding::decode(&passkey_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    jar: CookieJar,
+) -> error::Result<Json<types::FileBrowserResponse>> {
+    // Validate session and get user info
+    let (_user_id, passkey_id) = auth_helpers::get_user_info_from_session(&jar, &state)?;
 
-    let files = state
-        .storage
-        .get_files_for_user(&decoded_passkey_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let files = state.storage.get_files_for_user(&passkey_id).await?;
 
     Ok(Json(types::FileBrowserResponse { files }))
 }
@@ -306,15 +327,18 @@ async fn get_files(
 async fn get_file_content(
     Path(file_id): Path<String>,
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(req): Json<types::GetFileContentRequest>,
-) -> Result<Json<types::GetFileContentResponse>, StatusCode> {
-    let file_id = Uuid::parse_str(&file_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+) -> error::Result<Json<types::GetFileContentResponse>> {
+    // Validate session and get user info
+    let (_user_id, passkey_id) = auth_helpers::get_user_info_from_session(&jar, &state)?;
+
+    let file_id = Uuid::parse_str(&file_id)?;
 
     let response = state
         .storage
-        .get_file_content(file_id, req.version_id, &req.passkey_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .get_file_content(file_id, req.version_id, &passkey_id)
+        .await?;
 
     Ok(Json(response))
 }
@@ -322,9 +346,13 @@ async fn get_file_content(
 async fn save_file_version(
     Path(file_id): Path<String>,
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(req): Json<types::SaveVersionRequest>,
-) -> Result<Json<types::SaveVersionResponse>, StatusCode> {
-    let file_id = Uuid::parse_str(&file_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+) -> error::Result<Json<types::SaveVersionResponse>> {
+    // Validate session and get user info
+    let (_user_id, passkey_id) = auth_helpers::get_user_info_from_session(&jar, &state)?;
+
+    let file_id = Uuid::parse_str(&file_id)?;
 
     let response = state
         .storage
@@ -332,10 +360,9 @@ async fn save_file_version(
             file_id,
             &req.content,
             req.change_summary.as_deref(),
-            &req.passkey_id,
+            &passkey_id,
         )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .await?;
 
     Ok(Json(response))
 }

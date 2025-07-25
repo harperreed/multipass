@@ -3,8 +3,8 @@
 
 use anyhow::Result;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Set,
 };
 use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
@@ -13,6 +13,16 @@ use webauthn_rs::prelude::Passkey;
 use crate::entities::{credential, file, file_version, user};
 use crate::migration::Migrator;
 use crate::types::*;
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct FileWithCount {
+    pub id: Uuid,
+    pub filename: String,
+    pub tags: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub version_count: i32,
+}
 
 pub struct Storage {
     pub db: DatabaseConnection,
@@ -140,36 +150,16 @@ impl Storage {
         req: &CreateFileRequest,
         user_id: Uuid,
     ) -> Result<CreateFileResponse> {
-        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
-        use chacha20poly1305::{
-            ChaCha20Poly1305, Nonce,
-            aead::{Aead, KeyInit, OsRng},
-        };
-        use rand::RngCore;
-
         // Generate encryption materials
-        let mut salt = [0u8; 16];
-        let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut salt);
-        OsRng.fill_bytes(&mut nonce_bytes);
+        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials();
 
-        // Derive key from passkey ID
-        let argon2 = Argon2::default();
-        let salt_string =
-            SaltString::encode_b64(&salt).map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
-        let password_hash = argon2
-            .hash_password(req.passkey_id.as_bytes(), &salt_string)
-            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
-        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
-        let key = &key_bytes[..32]; // Take first 32 bytes for ChaCha20Poly1305
-
-        // Encrypt content
-        let cipher = ChaCha20Poly1305::new_from_slice(key)
-            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let encrypted_content = cipher
-            .encrypt(nonce, req.content.as_bytes())
-            .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
+        // Encrypt content using common utility
+        let encrypted_content = crate::crypto::encrypt_with_materials(
+            &req.content,
+            &req.passkey_id,
+            &salt,
+            &nonce_bytes,
+        )?;
 
         // Generate content hash for change detection
         let content_hash = format!("{:x}", md5::compute(req.content.as_bytes()));
@@ -214,28 +204,33 @@ impl Storage {
     }
 
     pub async fn get_files_for_user(&self, passkey_id: &str) -> Result<Vec<FileInfo>> {
-        let files = file::Entity::find()
+        use sea_orm::{JoinType, QuerySelect, RelationTrait};
+
+        // Use a more efficient query that joins files with version counts
+        let files_with_counts = file::Entity::find()
             .filter(file::Column::PasskeyId.eq(passkey_id))
+            .join(JoinType::LeftJoin, file::Relation::Versions.def())
+            .column_as(file_version::Column::Id.count(), "version_count")
+            .group_by(file::Column::Id)
+            .group_by(file::Column::Filename)
+            .group_by(file::Column::Tags)
+            .group_by(file::Column::CreatedAt)
+            .group_by(file::Column::UpdatedAt)
+            .into_model::<FileWithCount>()
             .all(&self.db)
             .await?;
 
-        let mut file_infos = Vec::new();
-        for f in files {
-            // Count versions for this file
-            let version_count = file_version::Entity::find()
-                .filter(file_version::Column::FileId.eq(f.id))
-                .count(&self.db)
-                .await? as i32;
-
-            file_infos.push(FileInfo {
+        let file_infos = files_with_counts
+            .into_iter()
+            .map(|f| FileInfo {
                 id: f.id,
                 filename: f.filename,
                 tags: f.tags,
-                version_count,
+                version_count: f.version_count,
                 created_at: f.created_at,
                 updated_at: f.updated_at,
-            });
-        }
+            })
+            .collect();
 
         Ok(file_infos)
     }
@@ -246,12 +241,6 @@ impl Storage {
         version_id: Option<Uuid>,
         passkey_id: &str,
     ) -> Result<GetFileContentResponse> {
-        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
-        use chacha20poly1305::{
-            ChaCha20Poly1305, Nonce,
-            aead::{Aead, KeyInit},
-        };
-
         // Get the file to verify ownership
         let file = file::Entity::find_by_id(file_id)
             .one(&self.db)
@@ -279,25 +268,14 @@ impl Storage {
                 .ok_or_else(|| anyhow::anyhow!("No versions found"))?
         };
 
-        // Decrypt the content
-        let argon2 = Argon2::default();
-        let salt_string = SaltString::encode_b64(&version.salt)
-            .map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
-        let password_hash = argon2
-            .hash_password(passkey_id.as_bytes(), &salt_string)
-            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
-        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
-        let key = &key_bytes[..32];
-
-        let cipher = ChaCha20Poly1305::new_from_slice(key)
-            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
-        let nonce = Nonce::from_slice(&version.nonce);
-        let decrypted_content = cipher
-            .decrypt(nonce, version.encrypted_content.as_slice())
-            .map_err(|_| anyhow::anyhow!("Decryption failed"))?;
-
-        let content = String::from_utf8(decrypted_content)
-            .map_err(|_| anyhow::anyhow!("Invalid UTF-8 content"))?;
+        // Decrypt the content using common utility
+        let content = crate::crypto::decrypt_with_materials(
+            &version.encrypted_content,
+            passkey_id,
+            &version.salt,
+            &version.nonce,
+        )
+        .map_err(|_| anyhow::anyhow!("Invalid UTF-8 content"))?;
 
         Ok(GetFileContentResponse {
             content,
@@ -313,13 +291,6 @@ impl Storage {
         change_summary: Option<&str>,
         passkey_id: &str,
     ) -> Result<SaveVersionResponse> {
-        use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
-        use chacha20poly1305::{
-            ChaCha20Poly1305, Nonce,
-            aead::{Aead, KeyInit, OsRng},
-        };
-        use rand::RngCore;
-
         // Get the file to verify ownership
         let file = file::Entity::find_by_id(file_id)
             .one(&self.db)
@@ -343,28 +314,11 @@ impl Storage {
         let new_version_number = current_max_version + 1;
 
         // Generate encryption materials
-        let mut salt = [0u8; 16];
-        let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut salt);
-        OsRng.fill_bytes(&mut nonce_bytes);
+        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials();
 
-        // Derive key from passkey ID
-        let argon2 = Argon2::default();
-        let salt_string =
-            SaltString::encode_b64(&salt).map_err(|_| anyhow::anyhow!("Salt encoding failed"))?;
-        let password_hash = argon2
-            .hash_password(passkey_id.as_bytes(), &salt_string)
-            .map_err(|_| anyhow::anyhow!("Key derivation failed"))?;
-        let key_bytes = password_hash.hash.unwrap().as_bytes().to_vec();
-        let key = &key_bytes[..32];
-
-        // Encrypt content
-        let cipher = ChaCha20Poly1305::new_from_slice(key)
-            .map_err(|_| anyhow::anyhow!("Invalid key size"))?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let encrypted_content = cipher
-            .encrypt(nonce, content.as_bytes())
-            .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
+        // Encrypt content using common utility
+        let encrypted_content =
+            crate::crypto::encrypt_with_materials(content, passkey_id, &salt, &nonce_bytes)?;
 
         // Generate content hash for change detection
         let content_hash = format!("{:x}", md5::compute(content.as_bytes()));

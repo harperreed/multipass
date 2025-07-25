@@ -32,6 +32,7 @@ pub struct RegisterStartResponse {
 pub struct RegisterFinishRequest {
     pub user_id: Uuid,
     pub credential: RegisterPublicKeyCredential,
+    pub vault_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
