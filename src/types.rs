@@ -8,6 +8,50 @@ use webauthn_rs::prelude::{
     RequestChallengeResponse,
 };
 
+// Challenge management types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateChallengeRequest {
+    pub operation_type: String, // "file_create", "file_read", "file_write", "file_delete"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateChallengeResponse {
+    pub challenge_id: String,
+    pub challenge_bytes: Vec<u8>, // Base64 encoded challenge
+    pub expires_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CryptoOperationRequest {
+    pub challenge_id: String,
+    pub webauthn_signature: Vec<u8>, // WebAuthn assertion signature
+}
+
+// Updated request types to include challenge verification
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SecureCreateFileRequest {
+    pub filename: String,
+    pub tags: String,
+    pub content: String,
+    pub challenge_id: String,
+    pub webauthn_signature: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SecureGetFileContentRequest {
+    pub version_id: Option<Uuid>,
+    pub challenge_id: String,
+    pub webauthn_signature: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SecureSaveVersionRequest {
+    pub content: String,
+    pub change_summary: Option<String>,
+    pub challenge_id: String,
+    pub webauthn_signature: Vec<u8>,
+}
+
 // WebAuthn related types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
