@@ -676,9 +676,9 @@
 
         // Initialize the app when page loads
         window.addEventListener('load', async function() {
-            // Check authentication status
-            const isAuthenticated = await Auth.checkAuthStatus();
-            if (!isAuthenticated) {
+            // Check authentication status (this will also verify server session)
+            const authResult = await Auth.checkAuthStatus();
+            if (!authResult.authenticated) {
                 UI.showToast('Error', 'Please log in again', 'error');
                 setTimeout(() => {
                     window.location.href = '/';
@@ -686,8 +686,13 @@
                 return;
             }
 
-            // Load files using secure methods
-            await app.loadFiles();
+            // Load files - use cached data if available to avoid duplicate request
+            if (authResult.filesData) {
+                app.files = authResult.filesData.files;
+                app.filterFiles();
+            } else {
+                await app.loadFiles();
+            }
 
             // Set up search functionality
             const searchInput = document.getElementById('searchInput');

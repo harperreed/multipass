@@ -5,14 +5,43 @@ class Auth {
     static async checkAuthStatus() {
         // Check if we have stored credentials
         const passkeyId = localStorage.getItem('passkey_id');
-        if (passkeyId) {
-            // Set credentials in app
+        if (!passkeyId) {
+            return { authenticated: false };
+        }
+
+        // Verify server session is still valid by making a test request
+        try {
+            const response = await fetch('/files', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                // Set credentials in app
+                if (window.app) {
+                    window.app.setCredentials(passkeyId);
+                }
+                const data = await response.json();
+                return { authenticated: true, filesData: data };
+            } else if (response.status === 401) {
+                // Session expired, clear localStorage
+                localStorage.removeItem('passkey_id');
+                return { authenticated: false };
+            } else {
+                // Other error, but session might be valid
+                if (window.app) {
+                    window.app.setCredentials(passkeyId);
+                }
+                return { authenticated: true };
+            }
+        } catch (error) {
+            console.error('Auth check failed:', error);
+            // Network error - assume session is still valid if we have stored credentials
             if (window.app) {
                 window.app.setCredentials(passkeyId);
             }
-            return true;
+            return { authenticated: true };
         }
-        return false;
     }
 
     static async startRegistration(username, displayName) {
