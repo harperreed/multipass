@@ -138,7 +138,20 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::middleware::from_fn(
             crate::middleware::security_headers,
         ))
-        .layer(CorsLayer::permissive())
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any) // TODO: Configure specific origins in production
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::DELETE,
+                ])
+                .allow_headers([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                ])
+                .allow_credentials(true),
+        )
         .with_state(app_state);
 
     let bind_addr = format!("{}:{}", args.host, args.port);
@@ -165,9 +178,16 @@ async fn main() -> anyhow::Result<()> {
                 println!("🚀 Server running on http://{}:{}", args.host, args.port);
                 println!("📍 WebAuthn will work (localhost is considered secure)");
             } else {
-                println!("🚀 Server running on http://{}:{}", args.host, args.port);
-                println!("⚠️  WebAuthn requires HTTPS for non-localhost access!");
-                println!("💡 Use --cert and --key flags for HTTPS, or access via localhost");
+                println!("❌ SECURITY ERROR: HTTP mode not allowed for non-localhost deployments!");
+                println!(
+                    "🔒 Please use --cert and --key flags to enable HTTPS for production security."
+                );
+                println!(
+                    "💡 WebAuthn and secure encryption require HTTPS for non-localhost access."
+                );
+                return Err(anyhow::anyhow!(
+                    "Production deployment requires HTTPS. Use --cert and --key flags or deploy on localhost only."
+                ));
             }
 
             axum::serve(listener, app).await?;
@@ -296,10 +316,7 @@ async fn identify_user(
     jar: CookieJar,
     Json(req): Json<types::IdentifyRequest>,
 ) -> error::Result<(CookieJar, Json<types::IdentifyResponse>)> {
-    println!(
-        "Attempting to identify credential ID: {}",
-        req.credential_id
-    );
+    tracing::debug!("Processing credential identification request");
 
     // The credential ID from the frontend uses base64url encoding (with - and _)
     // Convert from base64url to standard base64 (with + and /)
@@ -311,11 +328,11 @@ async fn identify_user(
         n => format!("{}{}", standard_base64, "=".repeat(4 - n)),
     };
 
-    println!("Converted to standard base64: {}", padded_base64);
+    tracing::debug!("Processing base64 credential format conversion");
 
     // Try to find it with the converted format
     if let Ok(stored_cred) = state.storage.get_credential(&padded_base64).await {
-        println!("Found credential with converted format: {}", padded_base64);
+        tracing::debug!("Credential found with format conversion");
 
         // Create session and set cookie
         let session_id =
@@ -339,7 +356,7 @@ async fn identify_user(
 
     // Fallback: try the original format in case it's already correct
     if let Ok(stored_cred) = state.storage.get_credential(&req.credential_id).await {
-        println!("Found credential directly: {}", req.credential_id);
+        tracing::debug!("Credential found directly");
 
         // Create session and set cookie
         let session_id =
@@ -361,17 +378,7 @@ async fn identify_user(
         ));
     }
 
-    // Debug: List all stored credentials to see what's actually there
-    println!("Debugging: Let's see what credentials are stored...");
-    use crate::entities::credential;
-    use sea_orm::EntityTrait;
-    if let Ok(credentials) = credential::Entity::find().all(&state.storage.db).await {
-        for cred in credentials {
-            println!("Stored credential ID: {}", cred.id);
-        }
-    }
-
-    println!("Credential not found with either method");
+    tracing::warn!("Credential not found for authentication attempt");
     Err(error::AppError::NotFound(format!(
         "Credential {} not found",
         req.credential_id
