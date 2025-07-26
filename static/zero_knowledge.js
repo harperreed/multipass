@@ -11,7 +11,7 @@ async function deriveKeyFromSignature(signature, salt) {
         false,
         ['deriveKey']
     );
-    
+
     return await crypto.subtle.deriveKey(
         {
             name: 'PBKDF2',
@@ -30,21 +30,21 @@ async function deriveKeyFromSignature(signature, salt) {
 async function encryptWithPasskey(plaintext, passkeySignature) {
     const encoder = new TextEncoder();
     const data = encoder.encode(plaintext);
-    
+
     // Generate random salt and IV for this encryption
     const salt = crypto.getRandomValues(new Uint8Array(32));
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    
+
     // Derive key from the WebAuthn signature
     const key = await deriveKeyFromSignature(passkeySignature, salt);
-    
+
     // Encrypt the data
     const ciphertext = await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv: iv },
         key,
         data
     );
-    
+
     return {
         ciphertext: Array.from(new Uint8Array(ciphertext)),
         salt: Array.from(salt),
@@ -55,20 +55,20 @@ async function encryptWithPasskey(plaintext, passkeySignature) {
 // Client-side decryption (zero-knowledge)
 async function decryptWithPasskey(encryptedData, passkeySignature) {
     const { ciphertext, salt, iv } = encryptedData;
-    
+
     // Derive the same key from the signature
     const key = await deriveKeyFromSignature(
-        passkeySignature, 
+        passkeySignature,
         new Uint8Array(salt)
     );
-    
+
     // Decrypt the data
     const plaintext = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv: new Uint8Array(iv) },
         key,
         new Uint8Array(ciphertext)
     );
-    
+
     const decoder = new TextDecoder();
     return decoder.decode(plaintext);
 }
@@ -77,7 +77,7 @@ async function decryptWithPasskey(encryptedData, passkeySignature) {
 async function generateEncryptionSignature(passkey) {
     // Create a deterministic challenge for encryption
     const encryptionChallenge = new TextEncoder().encode("ENCRYPT_" + Date.now());
-    
+
     // Sign the challenge with the passkey
     const assertion = await navigator.credentials.get({
         publicKey: {
@@ -89,7 +89,7 @@ async function generateEncryptionSignature(passkey) {
             userVerification: 'preferred'
         }
     });
-    
+
     return new Uint8Array(assertion.response.signature);
 }
 
@@ -98,13 +98,13 @@ async function zeroKnowledgeEncrypt(plaintext) {
     if (!currentPasskeyId) {
         throw new Error('Please authenticate first');
     }
-    
+
     // Generate a fresh signature for encryption
     const signature = await generateEncryptionSignature(currentPasskey);
-    
+
     // Encrypt on client-side
     const encrypted = await encryptWithPasskey(plaintext, signature);
-    
+
     // Send only the encrypted blob to server (server never sees plaintext)
     const response = await fetch('/store_encrypted', {
         method: 'POST',
@@ -114,7 +114,7 @@ async function zeroKnowledgeEncrypt(plaintext) {
             encrypted_blob: encrypted
         })
     });
-    
+
     return response.json();
 }
 
@@ -122,16 +122,16 @@ async function zeroKnowledgeDecrypt(dataId) {
     if (!currentPasskeyId) {
         throw new Error('Please authenticate first');
     }
-    
+
     // Get encrypted blob from server
     const response = await fetch(`/get_encrypted/${dataId}`);
     const { encrypted_blob } = await response.json();
-    
+
     // Generate the same signature for decryption
     const signature = await generateEncryptionSignature(currentPasskey);
-    
+
     // Decrypt on client-side
     const plaintext = await decryptWithPasskey(encrypted_blob, signature);
-    
+
     return plaintext;
 }
