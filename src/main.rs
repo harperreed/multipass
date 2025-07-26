@@ -13,6 +13,7 @@ use clap::Parser;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use uuid::Uuid;
 
 mod auth;
@@ -135,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
             "/zero-knowledge/:data_id",
             get(zero_knowledge::get_encrypted),
         )
+        .nest_service("/static", ServeDir::new("static"))
         .layer(axum::middleware::from_fn(
             crate::middleware::security_headers,
         ))
