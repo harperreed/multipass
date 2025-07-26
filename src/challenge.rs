@@ -175,8 +175,6 @@ impl ChallengeManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::time::Duration as StdDuration;
 
     #[test]
     fn test_challenge_creation() {

@@ -327,6 +327,9 @@ pub async fn verify_webauthn_signature_for_challenge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::challenge::{Challenge, ChallengeType};
+    use std::time::{Duration, SystemTime};
+    use uuid::Uuid;
 
     #[test]
     fn test_key_derivation() {
@@ -343,5 +346,209 @@ mod tests {
         let different_salt = b"different_salt16";
         let key3 = derive_key(passkey_id, different_salt).unwrap();
         assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn test_key_derivation_different_passkey_ids() {
+        let salt = b"test_salt_16byte";
+
+        let key1 = derive_key("passkey_1", salt).unwrap();
+        let key2 = derive_key("passkey_2", salt).unwrap();
+
+        // Different passkey IDs should produce different keys
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_secure_key_derivation() {
+        let webauthn_signature = b"mock_signature_data_32_bytes_long123";
+        let challenge_bytes = b"test_challenge_32_bytes_long_data123";
+        let salt = b"test_salt_16byte";
+
+        let key1 = derive_key_secure(webauthn_signature, challenge_bytes, salt).unwrap();
+        let key2 = derive_key_secure(webauthn_signature, challenge_bytes, salt).unwrap();
+
+        // Same inputs should produce same key
+        assert_eq!(key1, key2);
+
+        // Different signature should produce different key
+        let different_signature = b"different_signature_32_bytes_long12";
+        let key3 = derive_key_secure(different_signature, challenge_bytes, salt).unwrap();
+        assert_ne!(key1, key3);
+
+        // Different salt should produce different key
+        let different_salt = b"different_salt16";
+        let key4 = derive_key_secure(webauthn_signature, challenge_bytes, different_salt).unwrap();
+        assert_ne!(key1, key4);
+    }
+
+    #[test]
+    fn test_encryption_materials_generation() {
+        let (salt1, nonce1) = generate_encryption_materials().unwrap();
+        let (salt2, nonce2) = generate_encryption_materials().unwrap();
+
+        // Should generate different materials each time
+        assert_ne!(salt1, salt2);
+        assert_ne!(nonce1, nonce2);
+
+        // Check correct sizes
+        assert_eq!(salt1.len(), 16);
+        assert_eq!(nonce1.len(), 12);
+    }
+
+    #[test]
+    fn test_encryption_roundtrip() {
+        let passkey_id = "test_passkey_123";
+        let plaintext = "Hello, secure world!";
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        // Encrypt
+        let ciphertext = encrypt_with_materials(plaintext, passkey_id, &salt, &nonce).unwrap();
+
+        // Decrypt
+        let decrypted = decrypt_with_materials(&ciphertext, passkey_id, &salt, &nonce).unwrap();
+
+        assert_eq!(plaintext, decrypted);
+    }
+
+    #[test]
+    fn test_encryption_with_wrong_key_fails() {
+        let plaintext = "Secret message";
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        // Encrypt with one key
+        let ciphertext = encrypt_with_materials(plaintext, "key1", &salt, &nonce).unwrap();
+
+        // Try to decrypt with different key
+        let result = decrypt_with_materials(&ciphertext, "key2", &salt, &nonce);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_secure_encryption_roundtrip() {
+        let webauthn_signature = b"mock_signature_data_32_bytes_long123";
+        let challenge = create_test_challenge();
+        let plaintext = "Secure message with WebAuthn";
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        // Encrypt with secure method
+        let ciphertext = encrypt_with_webauthn_signature(
+            plaintext,
+            webauthn_signature,
+            &challenge,
+            &salt,
+            &nonce,
+        )
+        .unwrap();
+
+        // Decrypt with secure method
+        let decrypted = decrypt_with_webauthn_signature(
+            &ciphertext,
+            webauthn_signature,
+            &challenge,
+            &salt,
+            &nonce,
+        )
+        .unwrap();
+
+        assert_eq!(plaintext, decrypted);
+    }
+
+    #[test]
+    fn test_secure_encryption_with_wrong_signature_fails() {
+        let plaintext = "Secret secure message";
+        let challenge = create_test_challenge();
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        // Encrypt with one signature
+        let signature1 = b"signature_one_32_bytes_long_test123";
+        let ciphertext =
+            encrypt_with_webauthn_signature(plaintext, signature1, &challenge, &salt, &nonce)
+                .unwrap();
+
+        // Try to decrypt with different signature
+        let signature2 = b"signature_two_32_bytes_long_test123";
+        let result =
+            decrypt_with_webauthn_signature(&ciphertext, signature2, &challenge, &salt, &nonce);
+
+        assert!(result.is_err());
+    }
+
+    // Note: Removed WebAuthn signature verification tests as they require
+    // async context and storage dependencies that are complex to mock in unit tests.
+    // These are better tested in integration tests.
+
+    #[test]
+    fn test_insecure_vs_secure_keys_different() {
+        let passkey_id = "test_passkey_123";
+        let webauthn_signature = b"mock_signature_data_32_bytes_long123";
+        let challenge_bytes = b"test_challenge_32_bytes_long_data123";
+        let salt = b"test_salt_16byte";
+
+        // Generate key with insecure method
+        let insecure_key = derive_key(passkey_id, salt).unwrap();
+
+        // Generate key with secure method
+        let secure_key = derive_key_secure(webauthn_signature, challenge_bytes, salt).unwrap();
+
+        // They should be different (proving we're not using the same insecure derivation)
+        assert_ne!(insecure_key, secure_key);
+    }
+
+    #[test]
+    fn test_large_data_encryption() {
+        let passkey_id = "test_key";
+        let large_data = "A".repeat(10000); // 10KB of data
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        let ciphertext = encrypt_with_materials(&large_data, passkey_id, &salt, &nonce).unwrap();
+        let decrypted = decrypt_with_materials(&ciphertext, passkey_id, &salt, &nonce).unwrap();
+
+        assert_eq!(large_data, decrypted);
+    }
+
+    #[test]
+    fn test_empty_data_encryption() {
+        let passkey_id = "test_key";
+        let empty_data = "";
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        let ciphertext = encrypt_with_materials(empty_data, passkey_id, &salt, &nonce).unwrap();
+        let decrypted = decrypt_with_materials(&ciphertext, passkey_id, &salt, &nonce).unwrap();
+
+        assert_eq!(empty_data, decrypted);
+    }
+
+    #[test]
+    fn test_unicode_data_encryption() {
+        let passkey_id = "test_key";
+        let unicode_data = "Hello 世界! 🔐 Testing émojis and spéciál chars";
+        let (salt, nonce) = generate_encryption_materials().unwrap();
+
+        let ciphertext = encrypt_with_materials(unicode_data, passkey_id, &salt, &nonce).unwrap();
+        let decrypted = decrypt_with_materials(&ciphertext, passkey_id, &salt, &nonce).unwrap();
+
+        assert_eq!(unicode_data, decrypted);
+    }
+
+    // Helper function to create test challenges
+    fn create_test_challenge() -> Challenge {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        Challenge {
+            id: "test_challenge_id".to_string(),
+            user_id: Uuid::new_v4(),
+            operation_type: ChallengeType::GeneralCrypto,
+            challenge_bytes: [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32,
+            ],
+            created_at: now,
+            expires_at: now + 300, // 5 minutes
+        }
     }
 }

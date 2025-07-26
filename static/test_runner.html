@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiPass JavaScript Tests</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .pass { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .fail { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .summary { margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px; }
+        .error { color: #dc3545; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>MultiPass JavaScript Unit Tests</h1>
+    <div id="test-results"></div>
+    <div id="test-summary" class="summary"></div>
+
+    <!-- Include the modules to test -->
+    <script src="/static/auth.js"></script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/app.js"></script>
+
+    <script>
+        // Simple test framework
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passed = 0;
+                this.failed = 0;
+                this.results = [];
+            }
+
+            test(name, testFn) {
+                this.tests.push({ name, testFn });
+            }
+
+            assert(condition, message) {
+                if (!condition) {
+                    throw new Error(`Assertion failed: ${message}`);
+                }
+            }
+
+            assertEqual(actual, expected, message) {
+                if (actual !== expected) {
+                    throw new Error(`${message || 'Values not equal'}: expected ${expected}, got ${actual}`);
+                }
+            }
+
+            assertNotEqual(actual, expected, message) {
+                if (actual === expected) {
+                    throw new Error(`${message || 'Values should not be equal'}: both values are ${actual}`);
+                }
+            }
+
+            assertTrue(condition, message) {
+                this.assert(condition === true, message || 'Expected true');
+            }
+
+            assertFalse(condition, message) {
+                this.assert(condition === false, message || 'Expected false');
+            }
+
+            async run() {
+                const resultsDiv = document.getElementById('test-results');
+
+                for (const test of this.tests) {
+                    try {
+                        await test.testFn.call(this);
+                        this.passed++;
+                        this.results.push({ name: test.name, status: 'pass' });
+                        resultsDiv.innerHTML += `<div class="test-result pass">✓ ${test.name}</div>`;
+                    } catch (error) {
+                        this.failed++;
+                        this.results.push({ name: test.name, status: 'fail', error: error.message });
+                        resultsDiv.innerHTML += `
+                            <div class="test-result fail">
+                                ✗ ${test.name}
+                                <div class="error">${error.message}</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                // Show summary
+                const summaryDiv = document.getElementById('test-summary');
+                const total = this.passed + this.failed;
+                summaryDiv.innerHTML = `
+                    <h3>Test Summary</h3>
+                    <p>Total: ${total} | Passed: ${this.passed} | Failed: ${this.failed}</p>
+                    <p>Success Rate: ${Math.round((this.passed / total) * 100)}%</p>
+                `;
+
+                if (this.failed === 0) {
+                    summaryDiv.style.backgroundColor = '#d4edda';
+                    summaryDiv.style.color = '#155724';
+                } else {
+                    summaryDiv.style.backgroundColor = '#f8d7da';
+                    summaryDiv.style.color = '#721c24';
+                }
+            }
+        }
+
+        // Initialize test runner
+        const runner = new TestRunner();
+
+        // Test Auth module
+        runner.test('Auth.arrayBufferToBase64url handles empty buffer', function() {
+            const result = Auth.arrayBufferToBase64url(new ArrayBuffer(0));
+            this.assertEqual(result, '', 'Empty buffer should return empty string');
+        });
+
+        runner.test('Auth.arrayBufferToBase64url converts correctly', function() {
+            const buffer = new Uint8Array([72, 101, 108, 108, 111]).buffer; // "Hello"
+            const result = Auth.arrayBufferToBase64url(buffer);
+            this.assertEqual(result, 'SGVsbG8', 'Should convert "Hello" correctly');
+        });
+
+        runner.test('Auth.base64urlToArrayBuffer roundtrip', function() {
+            const original = new Uint8Array([1, 2, 3, 4, 5]);
+            const base64url = Auth.arrayBufferToBase64url(original.buffer);
+            const restored = new Uint8Array(Auth.base64urlToArrayBuffer(base64url));
+
+            this.assertEqual(restored.length, original.length, 'Lengths should match');
+            for (let i = 0; i < original.length; i++) {
+                this.assertEqual(restored[i], original[i], `Byte ${i} should match`);
+            }
+        });
+
+        runner.test('Auth.encodeWebAuthnResponse handles basic structure', function() {
+            const mockResponse = {
+                id: 'test-id',
+                rawId: new Uint8Array([1, 2, 3]).buffer,
+                type: 'public-key',
+                response: {
+                    clientDataJSON: new Uint8Array([4, 5, 6]).buffer
+                }
+            };
+
+            const encoded = Auth.encodeWebAuthnResponse(mockResponse);
+            this.assertEqual(encoded.id, 'test-id', 'ID should be preserved');
+            this.assertEqual(encoded.type, 'public-key', 'Type should be preserved');
+            this.assertTrue(typeof encoded.rawId === 'string', 'rawId should be encoded as string');
+            this.assertTrue(typeof encoded.response.clientDataJSON === 'string', 'clientDataJSON should be encoded');
+        });
+
+        // Test UI module
+        runner.test('UI.escapeHtml prevents XSS', function() {
+            const malicious = '<script>alert("xss")</script>';
+            const escaped = UI.escapeHtml(malicious);
+            this.assertFalse(escaped.includes('<script>'), 'Script tags should be escaped');
+            this.assertTrue(escaped.includes('&lt;script&gt;'), 'Should contain escaped brackets');
+        });
+
+        runner.test('UI.escapeHtml handles quotes', function() {
+            const input = 'Test "quotes" and \'apostrophes\'';
+            const escaped = UI.escapeHtml(input);
+            this.assertTrue(escaped.includes('&quot;'), 'Double quotes should be escaped');
+            // Note: Single quotes might not be escaped by textContent, which is fine
+        });
+
+        runner.test('UI.highlightSearchTerm escapes input', function() {
+            const malicious = '<script>alert("xss")</script>';
+            const result = UI.highlightSearchTerm('safe text', malicious);
+            this.assertFalse(result.includes('<script>'), 'Search term should be escaped');
+        });
+
+        runner.test('UI.highlightSearchTerm highlights correctly', function() {
+            const text = 'Hello world';
+            const searchTerm = 'world';
+            const result = UI.highlightSearchTerm(text, searchTerm);
+            this.assertTrue(result.includes('<mark'), 'Should contain highlight markup');
+            this.assertTrue(result.includes('world'), 'Should contain the search term');
+        });
+
+        runner.test('UI.getFileIcon returns appropriate icons', function() {
+            this.assertEqual(UI.getFileIcon('test.md'), '📝', 'Markdown files should get document icon');
+            this.assertEqual(UI.getFileIcon('test.txt'), '📄', 'Text files should get page icon');
+            this.assertEqual(UI.getFileIcon('test.js'), '📜', 'JavaScript files should get script icon');
+            this.assertEqual(UI.getFileIcon('test.unknown'), '📄', 'Unknown files should get default icon');
+        });
+
+        runner.test('UI.formatDate handles timestamps', function() {
+            const timestamp = Math.floor(Date.now() / 1000); // Current time in seconds
+            const result = UI.formatDate(timestamp);
+            this.assertTrue(typeof result === 'string', 'Should return a string');
+            this.assertTrue(result.length > 0, 'Should return non-empty string');
+        });
+
+        // Test MultiPassApp module
+        runner.test('MultiPassApp constructor initializes correctly', function() {
+            const app = new MultiPassApp();
+            this.assertEqual(app.currentPasskeyId, null, 'Should start with no passkey ID');
+            this.assertTrue(Array.isArray(app.files), 'Files should be an array');
+            this.assertEqual(app.files.length, 0, 'Files should start empty');
+            this.assertEqual(app.searchTerm, '', 'Search term should start empty');
+        });
+
+        runner.test('MultiPassApp.setCredentials updates state', function() {
+            const app = new MultiPassApp();
+            const testId = 'test-passkey-123';
+
+            app.setCredentials(testId);
+            this.assertEqual(app.currentPasskeyId, testId, 'Should set passkey ID');
+        });
+
+        runner.test('MultiPassApp.setSearchTerm updates search', function() {
+            const app = new MultiPassApp();
+            const searchTerm = 'test search';
+
+            // Mock the filterFiles method to avoid UI dependencies
+            app.filterFiles = function() {};
+
+            app.setSearchTerm(searchTerm);
+            this.assertEqual(app.searchTerm, searchTerm, 'Should set search term');
+        });
+
+        runner.test('MultiPassApp.setSelectedTag updates selection', function() {
+            const app = new MultiPassApp();
+            const tag = 'test-tag';
+
+            // Mock the filterFiles method
+            app.filterFiles = function() {};
+
+            app.setSelectedTag(tag);
+            this.assertEqual(app.selectedTag, tag, 'Should set selected tag');
+        });
+
+        // Test localStorage interaction (if available)
+        runner.test('Auth.checkAuthStatus handles no credentials', async function() {
+            // Clear localStorage first
+            if (typeof localStorage !== 'undefined') {
+                localStorage.removeItem('passkey_id');
+                const result = await Auth.checkAuthStatus();
+                this.assertFalse(result.authenticated, 'Should return false when no credentials');
+            }
+        });
+
+        // Test error handling
+        runner.test('UI.showToast handles different types', function() {
+            // Test that showToast doesn't throw errors
+            try {
+                UI.showToast('Test', 'Message', 'success');
+                UI.showToast('Test', 'Message', 'error');
+                UI.showToast('Test', 'Message', 'warning');
+                UI.showToast('Test', 'Message', 'info');
+                this.assertTrue(true, 'showToast should handle all types without error');
+            } catch (error) {
+                this.assertTrue(false, `showToast threw error: ${error.message}`);
+            }
+        });
+
+        // Test XSS prevention in various contexts
+        runner.test('XSS prevention in file rendering', function() {
+            const maliciousFilename = '<img src=x onerror=alert("xss")>';
+            const escaped = UI.escapeHtml(maliciousFilename);
+            this.assertFalse(escaped.includes('onerror'), 'Event handlers should be escaped');
+            this.assertFalse(escaped.includes('<img'), 'HTML tags should be escaped');
+        });
+
+        runner.test('XSS prevention in tag rendering', function() {
+            const maliciousTag = '"><script>alert("xss")</script>';
+            const escaped = UI.escapeHtml(maliciousTag);
+            this.assertFalse(escaped.includes('<script>'), 'Script injection should be prevented');
+        });
+
+        // Mock WebAuthn API for testing (if not available)
+        if (!window.navigator.credentials) {
+            window.navigator.credentials = {
+                create: async () => { throw new Error('Mock WebAuthn - not implemented'); },
+                get: async () => { throw new Error('Mock WebAuthn - not implemented'); }
+            };
+        }
+
+        // Run all tests when page loads
+        window.addEventListener('load', () => {
+            runner.run();
+        });
+    </script>
+</body>
+</html>

@@ -29,6 +29,11 @@ mod storage;
 mod types;
 mod zero_knowledge;
 
+#[cfg(test)]
+mod integration_tests;
+#[cfg(test)]
+mod storage_tests;
+
 use auth::AuthState;
 use challenge::ChallengeManager;
 use session::SessionStore;
