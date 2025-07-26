@@ -328,7 +328,6 @@ pub async fn verify_webauthn_signature_for_challenge(
 mod tests {
     use super::*;
     use crate::challenge::{Challenge, ChallengeType};
-    use std::time::{Duration, SystemTime};
     use uuid::Uuid;
 
     #[test]

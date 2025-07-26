@@ -5,7 +5,6 @@
 mod tests {
     use super::super::storage::*;
     use super::super::types::*;
-    use std::env;
     use tempfile::TempDir;
     use uuid::Uuid;
 
@@ -13,16 +12,39 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        // Set the database URL to use our temp file
-        unsafe {
-            env::set_var(
-                "DATABASE_URL",
-                format!("sqlite:{}?mode=rwc", db_path.display()),
-            );
-        }
+        // Create storage with explicit database path instead of relying on env var
+        use sea_orm::Database;
+        use sea_orm_migration::MigratorTrait;
 
-        let storage = Storage::new().await.unwrap();
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+        let db = Database::connect(&db_url).await.unwrap();
+
+        // Run migrations
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+
+        let storage = Storage { db };
         (storage, temp_dir)
+    }
+
+    // Helper to create a credential for testing
+    async fn create_test_credential(storage: &Storage, passkey_id: &str, user_id: Uuid) {
+        // Instead of creating a complex mock Passkey, let's directly insert into the database
+        // This bypasses the WebAuthn complexity for testing purposes
+        use crate::entities::credential;
+        use sea_orm::{ActiveModelTrait, Set};
+
+        // Create minimal credential data for testing
+        let mock_credential_data = vec![1, 2, 3, 4]; // Minimal mock data
+
+        let credential = credential::ActiveModel {
+            id: Set(passkey_id.to_string()),
+            user_id: Set(user_id),
+            credential_data: Set(mock_credential_data),
+            counter: Set(0),
+            created_at: Set(chrono::Utc::now().timestamp()),
+        };
+
+        credential.insert(&storage.db).await.unwrap();
     }
 
     #[tokio::test]
@@ -74,6 +96,9 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "test_passkey_123";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
+
         let request = CreateFileRequest {
             filename: "test.txt".to_string(),
             tags: "test/documents".to_string(),
@@ -116,6 +141,9 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "test_passkey_version";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
+
         let request = CreateFileRequest {
             filename: "versioned.txt".to_string(),
             tags: "test".to_string(),
@@ -178,6 +206,10 @@ mod tests {
         let passkey1 = "passkey_user1";
         let passkey2 = "passkey_user2";
 
+        // Create credentials for both users
+        create_test_credential(&storage, passkey1, user1.id).await;
+        create_test_credential(&storage, passkey2, user2.id).await;
+
         let request = CreateFileRequest {
             filename: "private.txt".to_string(),
             tags: "personal".to_string(),
@@ -226,6 +258,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "secure_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
         let request = CreateFileRequest {
             filename: "secure.txt".to_string(),
             tags: "secure/documents".to_string(),
@@ -268,6 +302,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "empty_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
         let request = CreateFileRequest {
             filename: "empty.txt".to_string(),
             tags: "".to_string(),
@@ -300,6 +336,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "large_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
         let large_content = "A".repeat(100000); // 100KB
         let request = CreateFileRequest {
             filename: "large.txt".to_string(),
@@ -333,6 +371,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "unicode_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
         let unicode_content = "Hello 世界! 🚀 Testing émojis and spéciál chars ñáéíóú";
         let request = CreateFileRequest {
             filename: "unicode.txt".to_string(),
@@ -366,6 +406,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "special_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
         let request = CreateFileRequest {
             filename: "file-with_special.chars (1).txt".to_string(),
             tags: "test/special-chars".to_string(),
@@ -395,6 +437,8 @@ mod tests {
         storage.store_user(&user).await.unwrap();
 
         let passkey_id = "order_passkey";
+        // Create credential for this passkey_id
+        create_test_credential(&storage, passkey_id, user.id).await;
 
         // Create multiple files
         for i in 1..=5 {
