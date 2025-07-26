@@ -2,7 +2,7 @@
 // ABOUTME: Derives encryption keys from passkey IDs and provides authenticated encryption
 
 use anyhow::{Result, anyhow};
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version, password_hash::SaltString};
 use chacha20poly1305::{
     ChaCha20Poly1305, Nonce,
     aead::{Aead, KeyInit, OsRng},
@@ -101,13 +101,23 @@ pub async fn decrypt_data(
     String::from_utf8(plaintext).map_err(|_| anyhow!("Invalid UTF-8 in decrypted data"))
 }
 
-/// Generate random encryption materials (salt and nonce)
-pub fn generate_encryption_materials() -> ([u8; SALT_SIZE], [u8; NONCE_SIZE]) {
+/// Generate random encryption materials (salt and nonce) with basic entropy verification
+pub fn generate_encryption_materials() -> Result<([u8; SALT_SIZE], [u8; NONCE_SIZE])> {
     let mut salt = [0u8; SALT_SIZE];
     let mut nonce = [0u8; NONCE_SIZE];
+
     OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut nonce);
-    (salt, nonce)
+
+    // Basic entropy check: ensure not all bytes are identical (catastrophic RNG failure)
+    if salt.iter().all(|&b| b == salt[0]) {
+        return Err(anyhow!("Insufficient entropy detected in salt generation"));
+    }
+    if nonce.iter().all(|&b| b == nonce[0]) {
+        return Err(anyhow!("Insufficient entropy detected in nonce generation"));
+    }
+
+    Ok((salt, nonce))
 }
 
 /// Encrypt data with provided materials (for consistent encryption across the app)
@@ -144,9 +154,62 @@ pub fn decrypt_with_materials(
     String::from_utf8(plaintext).map_err(|_| anyhow!("Invalid UTF-8 in decrypted data"))
 }
 
-/// Make derive_key public for external use
+/// SECURE key derivation using WebAuthn signature as secret material
+/// This is the CORRECT way to derive encryption keys
+#[allow(dead_code)] // Will be used when WebAuthn integration is complete
+pub fn derive_key_secure(
+    webauthn_signature: &[u8], // Secret material from WebAuthn signature
+    challenge: &[u8],          // Unique challenge that was signed
+    salt: &[u8],
+) -> Result<[u8; KEY_SIZE]> {
+    // Use stronger Argon2 parameters for production security
+    let params = Params::new(
+        65536,    // Memory cost: 64 MB
+        3,        // Time cost: 3 iterations
+        4,        // Parallelism: 4 threads
+        Some(32), // Output length: 32 bytes (256 bits)
+    )
+    .map_err(|_| anyhow!("Failed to create Argon2 parameters"))?;
+
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let salt_string = SaltString::encode_b64(salt).map_err(|_| anyhow!("Failed to encode salt"))?;
+
+    // Combine signature + challenge for additional entropy and binding
+    let combined_secret = [webauthn_signature, challenge].concat();
+
+    let password_hash = argon2
+        .hash_password(&combined_secret, &salt_string)
+        .map_err(|_| anyhow!("Failed to hash password"))?;
+
+    let hash = password_hash
+        .hash
+        .ok_or_else(|| anyhow!("No hash in password hash"))?;
+    let hash_bytes = hash.as_bytes();
+
+    if hash_bytes.len() < KEY_SIZE {
+        return Err(anyhow!("Hash too short"));
+    }
+
+    let mut key = [0u8; KEY_SIZE];
+    key.copy_from_slice(&hash_bytes[..KEY_SIZE]);
+    Ok(key)
+}
+
+/// INSECURE key derivation using public passkey_id as secret material
+/// WARNING: This function uses public passkey_id as secret material, which is cryptographically insecure.
+/// TODO: Replace all usage with derive_key_secure() for proper security.
+/// SECURITY LEVEL: 0 bits (equivalent to no encryption)
 pub fn derive_key(passkey_id: &str, salt: &[u8]) -> Result<[u8; KEY_SIZE]> {
-    let argon2 = Argon2::default();
+    // Use stronger Argon2 parameters (though the fundamental flaw remains)
+    let params = Params::new(
+        65536,    // Memory cost: 64 MB (vs default ~4 MB)
+        3,        // Time cost: 3 iterations
+        4,        // Parallelism: 4 threads
+        Some(32), // Output length: 32 bytes (256 bits)
+    )
+    .map_err(|_| anyhow!("Failed to create Argon2 parameters"))?;
+
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let salt_string = SaltString::encode_b64(salt).map_err(|_| anyhow!("Failed to encode salt"))?;
 
     let password_hash = argon2

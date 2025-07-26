@@ -1822,6 +1822,7 @@ dependencies = [
  "sea-orm-migration",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "time",
  "tokio",

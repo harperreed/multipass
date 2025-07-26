@@ -152,14 +152,17 @@ impl Storage {
         passkey_id: &str,
     ) -> Result<CreateFileResponse> {
         // Generate encryption materials
-        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials();
+        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials()?;
 
         // Encrypt content using common utility
         let encrypted_content =
             crate::crypto::encrypt_with_materials(&req.content, passkey_id, &salt, &nonce_bytes)?;
 
-        // Generate content hash for change detection
-        let content_hash = format!("{:x}", md5::compute(req.content.as_bytes()));
+        // Generate content hash for change detection using SHA-256
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(req.content.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
 
         // Create file record
         let file_id = Uuid::new_v4();
@@ -311,14 +314,17 @@ impl Storage {
         let new_version_number = current_max_version + 1;
 
         // Generate encryption materials
-        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials();
+        let (salt, nonce_bytes) = crate::crypto::generate_encryption_materials()?;
 
         // Encrypt content using common utility
         let encrypted_content =
             crate::crypto::encrypt_with_materials(content, passkey_id, &salt, &nonce_bytes)?;
 
-        // Generate content hash for change detection
-        let content_hash = format!("{:x}", md5::compute(content.as_bytes()));
+        // Generate content hash for change detection using SHA-256
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
 
         // Create new version
         let version_id = Uuid::new_v4();
