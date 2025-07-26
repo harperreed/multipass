@@ -49,6 +49,7 @@ class Auth {
             const response = await fetch('/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({
                     username,
                     display_name: displayName
@@ -73,6 +74,7 @@ class Auth {
             const response = await fetch('/register/finish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({
                     user_id: userId,
                     credential,
@@ -107,6 +109,7 @@ class Auth {
             const response = await fetch('/authenticate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ username })
             });
 
@@ -128,6 +131,7 @@ class Auth {
             const response = await fetch('/authenticate/finish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ credential })
             });
 
