@@ -138,9 +138,17 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::middleware::from_fn(
             crate::middleware::security_headers,
         ))
-        .layer(
+        .layer({
+            let localhost_http = format!("http://localhost:{}", args.port);
+            let localhost_https = format!("https://localhost:{}", args.port);
+            let ip_http = format!("http://127.0.0.1:{}", args.port);
+            let ip_https = format!("https://127.0.0.1:{}", args.port);
+
             CorsLayer::new()
-                .allow_origin(tower_http::cors::Any) // TODO: Configure specific origins in production
+                .allow_origin(localhost_http.parse::<axum::http::HeaderValue>().unwrap())
+                .allow_origin(localhost_https.parse::<axum::http::HeaderValue>().unwrap())
+                .allow_origin(ip_http.parse::<axum::http::HeaderValue>().unwrap())
+                .allow_origin(ip_https.parse::<axum::http::HeaderValue>().unwrap())
                 .allow_methods([
                     axum::http::Method::GET,
                     axum::http::Method::POST,
@@ -150,8 +158,8 @@ async fn main() -> anyhow::Result<()> {
                     axum::http::header::CONTENT_TYPE,
                     axum::http::header::AUTHORIZATION,
                 ])
-                .allow_credentials(true),
-        )
+                .allow_credentials(true)
+        })
         .with_state(app_state);
 
     let bind_addr = format!("{}:{}", args.host, args.port);
