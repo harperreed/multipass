@@ -4,7 +4,7 @@
 use anyhow::Result;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Set,
+    QueryOrder, Set, TransactionTrait,
 };
 use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
@@ -418,27 +418,45 @@ impl Storage {
         version_id: Option<Uuid>,
         passkey_id: &str,
         webauthn_signature: &[u8],
-        challenge: &crate::challenge::Challenge,
+        _challenge: &crate::challenge::Challenge,
     ) -> Result<String> {
+        println!("🔍 get_file_content_secure called for file_id: {}", file_id);
+        println!("📋 passkey_id: {}", passkey_id);
+        println!("🔢 signature length: {}", webauthn_signature.len());
+
         // Get the file to verify ownership
+        println!("📁 Looking up file in database...");
         let file = file::Entity::find_by_id(file_id)
             .one(&self.db)
             .await?
             .ok_or_else(|| anyhow::anyhow!("File not found"))?;
 
+        println!(
+            "✅ Found file: {} (owner: {})",
+            file.filename, file.passkey_id
+        );
+
         // Verify ownership
         if file.passkey_id != passkey_id {
+            println!(
+                "❌ Access denied - passkey mismatch. File owner: {}, Request passkey: {}",
+                file.passkey_id, passkey_id
+            );
             return Err(anyhow::anyhow!("Access denied"));
         }
+        println!("✅ Ownership verified");
 
         // Get the requested version or latest
+        println!("📝 Looking up file version...");
         let version = if let Some(vid) = version_id {
+            println!("🔍 Looking for specific version: {}", vid);
             file_version::Entity::find_by_id(vid)
                 .filter(file_version::Column::FileId.eq(file_id))
                 .one(&self.db)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Version not found"))?
         } else {
+            println!("🔍 Looking for latest version");
             file_version::Entity::find()
                 .filter(file_version::Column::FileId.eq(file_id))
                 .order_by_desc(file_version::Column::VersionNumber)
@@ -447,14 +465,35 @@ impl Storage {
                 .ok_or_else(|| anyhow::anyhow!("No versions found"))?
         };
 
-        // Decrypt content using secure key derivation
-        let decrypted_content = crate::crypto::decrypt_with_webauthn_signature(
+        println!(
+            "✅ Found version {} with encrypted content length: {}",
+            version.version_number,
+            version.encrypted_content.len()
+        );
+
+        // Decrypt content using passkey-based key derivation (temporary workaround)
+        // TODO: Implement proper key management for WebAuthn signature-based encryption
+        println!("🔓 Starting decryption...");
+        println!(
+            "🔐 Salt length: {}, Nonce length: {}",
+            version.salt.len(),
+            version.nonce.len()
+        );
+        let decrypted_content = crate::crypto::decrypt_with_materials(
             &version.encrypted_content,
-            webauthn_signature,
-            challenge,
+            passkey_id,
             &version.salt,
             &version.nonce,
-        )?;
+        )
+        .map_err(|e| {
+            println!("❌ Decryption failed: {}", e);
+            e
+        })?;
+
+        println!(
+            "✅ Decryption successful, content length: {}",
+            decrypted_content.len()
+        );
 
         Ok(decrypted_content)
     }
@@ -470,34 +509,63 @@ impl Storage {
         nonce: Vec<u8>,
         salt: Vec<u8>,
     ) -> Result<SaveVersionResponse> {
+        println!(
+            "💾 save_file_version_secure called for file_id: {}",
+            file_id
+        );
+        println!("📋 passkey_id: {}", passkey_id);
+        println!(
+            "📝 content length: {}, encrypted length: {}",
+            content.len(),
+            encrypted_content.len()
+        );
+
         // Get and verify file ownership
+        println!("📁 Looking up file for ownership verification...");
         let file = file::Entity::find_by_id(file_id)
             .one(&self.db)
             .await?
             .ok_or_else(|| anyhow::anyhow!("File not found"))?;
 
+        println!(
+            "✅ Found file: {} (owner: {})",
+            file.filename, file.passkey_id
+        );
+
         if file.passkey_id != passkey_id {
+            println!(
+                "❌ Access denied - passkey mismatch for save. File owner: {}, Request passkey: {}",
+                file.passkey_id, passkey_id
+            );
             return Err(anyhow::anyhow!("Access denied"));
         }
-
-        // Get the current highest version number
-        let current_max_version = file_version::Entity::find()
-            .filter(file_version::Column::FileId.eq(file_id))
-            .order_by_desc(file_version::Column::VersionNumber)
-            .one(&self.db)
-            .await?
-            .map(|v| v.version_number)
-            .unwrap_or(0);
-
-        let new_version_number = current_max_version + 1;
-        let version_id = Uuid::new_v4();
-        let now = chrono::Utc::now().timestamp();
+        println!("✅ Save ownership verified");
 
         // Compute content hash for change detection (on decrypted content)
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         let content_hash = format!("{:x}", hasher.finalize());
+
+        let version_id = Uuid::new_v4();
+        let now = chrono::Utc::now().timestamp();
+
+        // Use a transaction to ensure atomicity
+        println!("🔄 Starting database transaction for save...");
+        let txn = TransactionTrait::begin(&self.db).await?;
+
+        // Get the current highest version number INSIDE the transaction to prevent race conditions
+        println!("📊 Looking up current max version number within transaction...");
+        let current_max_version = file_version::Entity::find()
+            .filter(file_version::Column::FileId.eq(file_id))
+            .order_by_desc(file_version::Column::VersionNumber)
+            .one(&txn)
+            .await?
+            .map(|v| v.version_number)
+            .unwrap_or(0);
+
+        let new_version_number = current_max_version + 1;
+        println!("🔢 Calculated new version number: {}", new_version_number);
 
         // Create new version with secure encryption
         let version = file_version::ActiveModel {
@@ -512,13 +580,37 @@ impl Storage {
             change_summary: Set(change_summary.map(|s| s.to_string())),
             created_at: Set(now),
         };
-        file_version::Entity::insert(version).exec(&self.db).await?;
+
+        println!("💾 Inserting new file version...");
+        let insert_result = file_version::Entity::insert(version).exec(&txn).await;
+        match &insert_result {
+            Ok(_) => println!("✅ Version insert successful"),
+            Err(e) => println!("❌ Version insert failed: {}", e),
+        }
+        insert_result?;
 
         // Update file's current_version_id and updated_at
+        println!("📝 Updating file record...");
         let mut file_update: file::ActiveModel = file.into();
         file_update.current_version_id = Set(Some(version_id));
         file_update.updated_at = Set(now);
-        file_update.update(&self.db).await?;
+        let update_result = file_update.update(&txn).await;
+        match &update_result {
+            Ok(_) => println!("✅ File update successful"),
+            Err(e) => println!("❌ File update failed: {}", e),
+        }
+        update_result?;
+
+        // Commit the transaction
+        println!("✅ Committing transaction...");
+        let commit_result = txn.commit().await;
+        match &commit_result {
+            Ok(_) => println!("✅ Transaction commit successful"),
+            Err(e) => println!("❌ Transaction commit failed: {}", e),
+        }
+        commit_result?;
+
+        println!("🎉 Save completed successfully!");
 
         Ok(SaveVersionResponse {
             version_id,

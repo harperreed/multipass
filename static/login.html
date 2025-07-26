@@ -263,6 +263,10 @@
 
                 const { passkey_id } = await finishResponse.json();
 
+                // Store the passkey_id in localStorage for future authentication
+                localStorage.setItem('passkey_id', passkey_id);
+                console.log('✅ Registration successful - passkey_id stored:', passkey_id);
+
                 // Session cookie is automatically set by server
                 showStatus('Success', `"${vaultName}" vault created successfully!`);
                 setTimeout(() => {
@@ -301,6 +305,10 @@
                 }
 
                 const { passkey_id, user_id } = await identifyResponse.json();
+
+                // Store the passkey_id in localStorage for future authentication
+                localStorage.setItem('passkey_id', passkey_id);
+                console.log('✅ Authentication successful - passkey_id stored:', passkey_id);
 
                 // Session cookie is automatically set by server
                 hideStatus();

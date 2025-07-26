@@ -513,15 +513,11 @@ async fn secure_create_file(
         error::AppError::Internal(format!("Failed to generate encryption materials: {}", e))
     })?;
 
-    // Encrypt content using WebAuthn signature-based key derivation
-    let encrypted_content = crypto::encrypt_with_webauthn_signature(
-        &req.content,
-        &req.webauthn_signature,
-        &challenge,
-        &salt,
-        &nonce,
-    )
-    .map_err(|e| error::AppError::Internal(format!("Encryption failed: {}", e)))?;
+    // Encrypt content using passkey-based key derivation (temporary workaround)
+    // TODO: Implement proper key management for WebAuthn signature-based encryption
+    let encrypted_content =
+        crypto::encrypt_with_materials(&req.content, &passkey_id, &salt, &nonce)
+            .map_err(|e| error::AppError::Internal(format!("Encryption failed: {}", e)))?;
 
     // Create the file using secure encryption
     let create_req = types::CreateFileRequest {
@@ -656,15 +652,11 @@ async fn secure_save_file_version(
         error::AppError::Internal(format!("Failed to generate encryption materials: {}", e))
     })?;
 
-    // Encrypt content using WebAuthn signature-based key derivation
-    let encrypted_content = crypto::encrypt_with_webauthn_signature(
-        &req.content,
-        &req.webauthn_signature,
-        &challenge,
-        &salt,
-        &nonce,
-    )
-    .map_err(|e| error::AppError::Internal(format!("Encryption failed: {}", e)))?;
+    // Encrypt content using passkey-based key derivation (temporary workaround)
+    // TODO: Implement proper key management for WebAuthn signature-based encryption
+    let encrypted_content =
+        crypto::encrypt_with_materials(&req.content, &passkey_id, &salt, &nonce)
+            .map_err(|e| error::AppError::Internal(format!("Encryption failed: {}", e)))?;
 
     // Save using secure encryption
     let response = state

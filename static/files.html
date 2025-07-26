@@ -676,31 +676,56 @@
 
         // Initialize the app when page loads
         window.addEventListener('load', async function() {
+            console.log('🚀 Files page initialization started');
+
             // Check authentication status (this will also verify server session)
+            console.log('🔍 Calling Auth.checkAuthStatus()');
             const authResult = await Auth.checkAuthStatus();
+            console.log('📊 Auth result:', authResult);
+
             if (!authResult.authenticated) {
+                console.error('❌ Authentication failed - showing error toast');
+                console.error('🔍 DEBUG: Auth result details:', JSON.stringify(authResult, null, 2));
+                console.error('🔍 DEBUG: localStorage passkey_id:', localStorage.getItem('passkey_id'));
+                console.error('🔍 DEBUG: All localStorage keys:', Object.keys(localStorage));
+
                 UI.showToast('Error', 'Please log in again', 'error');
+
+                // Longer delay to see logs and add alert for extra visibility
+                alert('Authentication failed! Check console for details. Redirecting in 5 seconds...');
+
                 setTimeout(() => {
+                    console.log('🔄 Redirecting to login page');
                     window.location.href = '/';
-                }, 2000);
+                }, 5000);
                 return;
             }
 
+            console.log('✅ Authentication successful - initializing file browser');
+
             // Load files - use cached data if available to avoid duplicate request
             if (authResult.filesData) {
+                console.log('📁 Using cached file data:', authResult.filesData.files?.length || 0, 'files');
                 app.files = authResult.filesData.files;
                 app.filterFiles();
             } else {
+                console.log('📁 Loading files from server');
                 await app.loadFiles();
             }
 
+            console.log('🔍 Setting up search functionality');
             // Set up search functionality
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
                 searchInput.addEventListener('input', (e) => {
                     app.setSearchTerm(e.target.value);
                 });
+                console.log('✅ Search input handler attached');
+            } else {
+                console.warn('⚠️ Search input element not found');
             }
+
+            console.log('🎉 Files page initialization complete');
         });
 
         // Global functions for HTML onclick handlers

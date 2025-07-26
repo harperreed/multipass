@@ -3,31 +3,48 @@
 
 class Auth {
     static async checkAuthStatus() {
+        console.log('🔍 Auth.checkAuthStatus() called');
+
         // Check if we have stored credentials
         const passkeyId = localStorage.getItem('passkey_id');
+        console.log('📋 Stored passkey_id:', passkeyId ? '[PRESENT]' : '[MISSING]');
+
         if (!passkeyId) {
+            console.log('❌ No passkey_id in localStorage - returning unauthenticated');
             return { authenticated: false };
         }
 
         // Verify server session is still valid by making a test request
+        console.log('🌐 Making auth check request to /files');
         try {
             const response = await fetch('/files', {
                 method: 'GET',
                 credentials: 'include'
             });
 
+            console.log('📡 Auth check response:', {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok
+            });
+
             if (response.ok) {
+                console.log('✅ Auth check successful - session valid');
                 // Set credentials in app
                 if (window.app) {
                     window.app.setCredentials(passkeyId);
+                    console.log('📱 Set credentials in app');
                 }
                 const data = await response.json();
+                console.log('📁 Files data received:', data.files?.length || 0, 'files');
                 return { authenticated: true, filesData: data };
             } else if (response.status === 401) {
+                console.log('🔒 Session expired (401) - clearing localStorage');
                 // Session expired, clear localStorage
                 localStorage.removeItem('passkey_id');
                 return { authenticated: false };
             } else {
+                console.log('⚠️ Other error but assuming session valid:', response.status);
                 // Other error, but session might be valid
                 if (window.app) {
                     window.app.setCredentials(passkeyId);
@@ -35,7 +52,7 @@ class Auth {
                 return { authenticated: true };
             }
         } catch (error) {
-            console.error('Auth check failed:', error);
+            console.error('💥 Auth check failed with error:', error);
             // Network error - assume session is still valid if we have stored credentials
             if (window.app) {
                 window.app.setCredentials(passkeyId);
@@ -70,7 +87,10 @@ class Auth {
     }
 
     static async finishRegistration(userId, credential, vaultName) {
+        console.log('🎯 Auth.finishRegistration() called', { userId, vaultName });
+
         try {
+            console.log('🌐 Sending registration finish request');
             const response = await fetch('/register/finish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -82,24 +102,36 @@ class Auth {
                 })
             });
 
+            console.log('📡 Registration finish response:', {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok
+            });
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
+                console.error('❌ Registration finish failed:', errorData);
                 throw new Error(errorData.message || `Registration completion failed: ${response.statusText}`);
             }
 
             const data = await response.json();
+            console.log('✅ Registration finish successful:', data);
 
             // Store credentials
             if (data.passkey_id) {
+                console.log('💾 Storing passkey_id in localStorage:', data.passkey_id);
                 localStorage.setItem('passkey_id', data.passkey_id);
                 if (window.app) {
                     window.app.setCredentials(data.passkey_id);
+                    console.log('📱 Set credentials in app');
                 }
+            } else {
+                console.warn('⚠️ No passkey_id in registration response');
             }
 
             return data;
         } catch (error) {
-            console.error('Registration finish error:', error);
+            console.error('💥 Registration finish error:', error);
             throw error;
         }
     }

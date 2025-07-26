@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Editor - MultiPass</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Core application modules -->
+    <script src="/static/auth.js"></script>
+    <script src="/static/secure_crypto.js"></script>
+    <script src="/static/ui.js"></script>
+    <script src="/static/app.js"></script>
     <style>
         .icon {
             width: 1rem;
@@ -121,27 +126,8 @@
             if (!currentFile) return;
 
             try {
-                const response = await fetch(`/files/${currentFile.id}/content`, {
-                    method: 'POST',
-                    credentials: 'same-origin', // Include session cookies
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        version_id: null // Get latest version
-                        // file_id now comes from URL path, not request body
-                        // passkey_id now comes from session, not needed in request
-                    })
-                });
-
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        // Redirect to login if unauthorized
-                        window.location.href = '/';
-                        return;
-                    }
-                    throw new Error('Failed to load file');
-                }
-
-                const data = await response.json();
+                // Use secure crypto system for file content retrieval
+                const data = await window.app.getFileContent(currentFile.id);
 
                 document.getElementById('fileContent').value = data.content;
                 document.getElementById('loadingState').style.display = 'none';
@@ -170,29 +156,10 @@
             try {
                 document.getElementById('editorStatus').textContent = 'Saving...';
                 const content = document.getElementById('fileContent').value;
+                const changeSummary = `Manual save at ${new Date().toLocaleTimeString()}`;
 
-                const response = await fetch(`/files/${currentFile.id}/save`, {
-                    method: 'POST',
-                    credentials: 'same-origin', // Include session cookies
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: content,
-                        change_summary: `Manual save at ${new Date().toLocaleTimeString()}`
-                        // file_id now comes from URL path, not request body
-                        // passkey_id now comes from session, not needed in request
-                    })
-                });
-
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        // Redirect to login if unauthorized
-                        window.location.href = '/';
-                        return;
-                    }
-                    throw new Error('Save failed');
-                }
-
-                const data = await response.json();
+                // Use secure crypto system for file saving
+                const data = await window.app.saveFileVersion(currentFile.id, content, changeSummary);
 
                 // Update auto-save tracking
                 lastSavedContent = content;
@@ -257,28 +224,8 @@
 
                 document.getElementById('editorStatus').textContent = 'Auto-saving...';
 
-                const response = await fetch(`/files/${currentFile.id}/save`, {
-                    method: 'POST',
-                    credentials: 'same-origin', // Include session cookies
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: content,
-                        change_summary: `Auto-save at ${new Date().toLocaleTimeString()}`
-                        // file_id now comes from URL path, not request body
-                        // passkey_id now comes from session, not needed in request
-                    })
-                });
-
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        // Redirect to login if unauthorized
-                        window.location.href = '/';
-                        return;
-                    }
-                    throw new Error('Auto-save failed');
-                }
-
-                const data = await response.json();
+                // Use secure crypto system for auto-save
+                const data = await window.app.saveFileVersion(currentFile.id, content, `Auto-save at ${new Date().toLocaleTimeString()}`);
 
                 lastSavedContent = content;
                 hasUnsavedChanges = false;
@@ -287,6 +234,11 @@
             } catch (error) {
                 console.error('Auto-save error:', error);
                 document.getElementById('editorStatus').textContent = 'Auto-save failed';
+
+                // If auth failed, redirect to login
+                if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                    window.location.href = '/';
+                }
             }
         }
 
@@ -331,10 +283,21 @@
         });
 
         // Initialize the editor when page loads
-        window.addEventListener('load', function() {
+        window.addEventListener('load', async function() {
             // Hide editor initially
             document.getElementById('editorContainer').style.display = 'none';
 
+            // Initialize authentication and set up app
+            console.log('🚀 Editor initialization started');
+            const authResult = await Auth.checkAuthStatus();
+
+            if (!authResult.authenticated) {
+                console.error('❌ Not authenticated - redirecting to login');
+                window.location.href = '/';
+                return;
+            }
+
+            console.log('✅ Authentication successful - initializing editor');
             initializeEditor();
         });
     </script>

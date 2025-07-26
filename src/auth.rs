@@ -228,10 +228,32 @@ pub async fn authenticate_start(
         ));
     }
 
-    let passkeys: Vec<Passkey> = credentials
-        .into_iter()
-        .filter_map(|cred| bincode::deserialize(&cred.credential_data).ok())
-        .collect();
+    // Handle bincode deserialization compatibility issues gracefully
+    let mut passkeys: Vec<Passkey> = Vec::new();
+    for cred in credentials {
+        match bincode::deserialize(&cred.credential_data) {
+            Ok(passkey) => passkeys.push(passkey),
+            Err(e) => {
+                println!(
+                    "⚠️ Warning: Failed to deserialize credential for user {}: {}",
+                    user.id, e
+                );
+                println!("📝 This may be due to bincode version compatibility issues");
+                // Continue with other credentials instead of failing completely
+                continue;
+            }
+        }
+    }
+
+    if passkeys.is_empty() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "Credential deserialization failed",
+                "message": "Unable to process stored credentials. Please contact support."
+            })),
+        ));
+    }
 
     // Start authentication
     let (rcr, passkey_authentication) = state

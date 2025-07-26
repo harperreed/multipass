@@ -37,13 +37,21 @@ class SecureCrypto {
             throw new Error('No credential ID set. Please authenticate first.');
         }
 
+        console.log('🔐 SecureCrypto.signChallenge() called');
+        console.log('📋 Current credential ID:', this.currentCredentialId ? '[PRESENT]' : '[MISSING]');
+        console.log('📏 Credential ID length:', this.currentCredentialId?.length || 0);
+
         try {
+            console.log('🔄 Converting credential ID from base64 to ArrayBuffer');
+            const credentialArrayBuffer = this.base64ToArrayBuffer(this.currentCredentialId);
+            console.log('✅ Conversion successful, ArrayBuffer length:', credentialArrayBuffer.byteLength);
+
             const assertion = await navigator.credentials.get({
                 publicKey: {
                     challenge: new Uint8Array(challengeBytes),
                     allowCredentials: [{
                         type: 'public-key',
-                        id: this.base64urlToArrayBuffer(this.currentCredentialId)
+                        id: credentialArrayBuffer
                     }],
                     userVerification: 'preferred',
                     timeout: 60000
@@ -173,6 +181,19 @@ class SecureCrypto {
     base64urlToArrayBuffer(base64url) {
         // Convert base64url to base64
         const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+        // Convert to ArrayBuffer
+        const binaryString = atob(padded);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    // Utility function to convert standard base64 to ArrayBuffer
+    base64ToArrayBuffer(base64) {
         // Add padding if needed
         const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
         // Convert to ArrayBuffer

@@ -26,25 +26,40 @@ class MultiPassApp {
     }
 
     async checkAuthentication() {
+        console.log('🔐 MultiPassApp.checkAuthentication() called');
         const storedPasskeyId = localStorage.getItem('passkey_id');
+        console.log('📋 Stored passkey_id:', storedPasskeyId ? '[PRESENT]' : '[MISSING]');
+
         if (storedPasskeyId) {
+            console.log('✅ Setting credentials from stored passkey_id');
             this.setCredentials(storedPasskeyId);
             return true;
         }
+        console.log('❌ No stored credentials found');
         return false;
     }
 
     // File operations using secure crypto
     async loadFiles() {
+        console.log('📁 MultiPassApp.loadFiles() called');
+        console.log('🔑 Current passkey_id:', this.currentPasskeyId ? '[PRESENT]' : '[MISSING]');
+
         if (!this.currentPasskeyId) {
-            console.error('No passkey ID available');
+            console.error('❌ No passkey ID available - cannot load files');
             return;
         }
 
         try {
+            console.log('🌐 Making request to /files endpoint');
             const response = await fetch('/files', {
                 method: 'GET',
                 credentials: 'include'
+            });
+
+            console.log('📡 Files response:', {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok
             });
 
             if (!response.ok) {
