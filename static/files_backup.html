@@ -675,39 +675,9 @@
         });
 
         // Initialize the app when page loads
-        window.addEventListener('load', async function() {
-            // Check authentication status
-            const isAuthenticated = await Auth.checkAuthStatus();
-            if (!isAuthenticated) {
-                UI.showToast('Error', 'Please log in again', 'error');
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 2000);
-                return;
-            }
-
-            // Load files using secure methods
-            await app.loadFiles();
-
-            // Set up search functionality
-            const searchInput = document.getElementById('searchInput');
-            if (searchInput) {
-                searchInput.addEventListener('input', (e) => {
-                    app.setSearchTerm(e.target.value);
-                });
-            }
+        window.addEventListener('load', function() {
+            initializeApp();
         });
-
-        // Global functions for HTML onclick handlers
-        function showCreateFileModal() { UI.showCreateFileModal(); }
-        function closeCreateFileModal() { UI.closeCreateFileModal(); }
-        function createFile() { UI.createFile(); }
-        function showFileInfoModal(fileId, filename, tags, versionCount, updatedAt) {
-            UI.showFileInfoModal(fileId, filename, tags, versionCount, updatedAt);
-        }
-        function closeFileInfoModal() { UI.closeFileInfoModal(); }
-        function saveFileInfo() { UI.saveFileInfo(); }
-        function handleLogout() { app.logout(); }
     </script>
 </body>
 </html>

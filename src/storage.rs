@@ -358,6 +358,174 @@ impl Storage {
         })
     }
 
+    // Secure file operations using WebAuthn signature-based encryption
+    pub async fn create_file_secure(
+        &self,
+        req: &CreateFileRequest,
+        user_id: Uuid,
+        passkey_id: &str,
+        encrypted_content: Vec<u8>,
+        nonce: Vec<u8>,
+        salt: Vec<u8>,
+    ) -> Result<CreateFileResponse> {
+        let now = chrono::Utc::now().timestamp();
+        let file_id = Uuid::new_v4();
+        let version_id = Uuid::new_v4();
+
+        // Compute content hash for change detection (on encrypted content)
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&encrypted_content);
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        // Create file record
+        let file = file::ActiveModel {
+            id: Set(file_id),
+            user_id: Set(user_id),
+            passkey_id: Set(passkey_id.to_string()),
+            filename: Set(req.filename.clone()),
+            tags: Set(req.tags.clone()),
+            current_version_id: Set(Some(version_id)),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        file::Entity::insert(file).exec(&self.db).await?;
+
+        // Create initial version with secure encryption
+        let version = file_version::ActiveModel {
+            id: Set(version_id),
+            file_id: Set(file_id),
+            user_id: Set(user_id),
+            version_number: Set(1),
+            encrypted_content: Set(encrypted_content),
+            nonce: Set(nonce),
+            salt: Set(salt),
+            content_hash: Set(content_hash),
+            change_summary: Set(Some("Initial version".to_string())),
+            created_at: Set(now),
+        };
+        file_version::Entity::insert(version).exec(&self.db).await?;
+
+        Ok(CreateFileResponse {
+            file_id,
+            version_id,
+        })
+    }
+
+    pub async fn get_file_content_secure(
+        &self,
+        file_id: Uuid,
+        version_id: Option<Uuid>,
+        passkey_id: &str,
+        webauthn_signature: &[u8],
+        challenge: &crate::challenge::Challenge,
+    ) -> Result<String> {
+        // Get the file to verify ownership
+        let file = file::Entity::find_by_id(file_id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("File not found"))?;
+
+        // Verify ownership
+        if file.passkey_id != passkey_id {
+            return Err(anyhow::anyhow!("Access denied"));
+        }
+
+        // Get the requested version or latest
+        let version = if let Some(vid) = version_id {
+            file_version::Entity::find_by_id(vid)
+                .filter(file_version::Column::FileId.eq(file_id))
+                .one(&self.db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Version not found"))?
+        } else {
+            file_version::Entity::find()
+                .filter(file_version::Column::FileId.eq(file_id))
+                .order_by_desc(file_version::Column::VersionNumber)
+                .one(&self.db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("No versions found"))?
+        };
+
+        // Decrypt content using secure key derivation
+        let decrypted_content = crate::crypto::decrypt_with_webauthn_signature(
+            &version.encrypted_content,
+            webauthn_signature,
+            challenge,
+            &version.salt,
+            &version.nonce,
+        )?;
+
+        Ok(decrypted_content)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn save_file_version_secure(
+        &self,
+        file_id: Uuid,
+        content: &str,
+        change_summary: Option<&str>,
+        passkey_id: &str,
+        encrypted_content: Vec<u8>,
+        nonce: Vec<u8>,
+        salt: Vec<u8>,
+    ) -> Result<SaveVersionResponse> {
+        // Get and verify file ownership
+        let file = file::Entity::find_by_id(file_id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("File not found"))?;
+
+        if file.passkey_id != passkey_id {
+            return Err(anyhow::anyhow!("Access denied"));
+        }
+
+        // Get the current highest version number
+        let current_max_version = file_version::Entity::find()
+            .filter(file_version::Column::FileId.eq(file_id))
+            .order_by_desc(file_version::Column::VersionNumber)
+            .one(&self.db)
+            .await?
+            .map(|v| v.version_number)
+            .unwrap_or(0);
+
+        let new_version_number = current_max_version + 1;
+        let version_id = Uuid::new_v4();
+        let now = chrono::Utc::now().timestamp();
+
+        // Compute content hash for change detection (on decrypted content)
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let content_hash = format!("{:x}", hasher.finalize());
+
+        // Create new version with secure encryption
+        let version = file_version::ActiveModel {
+            id: Set(version_id),
+            file_id: Set(file_id),
+            user_id: Set(file.user_id),
+            version_number: Set(new_version_number),
+            encrypted_content: Set(encrypted_content),
+            nonce: Set(nonce),
+            salt: Set(salt),
+            content_hash: Set(content_hash),
+            change_summary: Set(change_summary.map(|s| s.to_string())),
+            created_at: Set(now),
+        };
+        file_version::Entity::insert(version).exec(&self.db).await?;
+
+        // Update file's current_version_id and updated_at
+        let mut file_update: file::ActiveModel = file.into();
+        file_update.current_version_id = Set(Some(version_id));
+        file_update.updated_at = Set(now);
+        file_update.update(&self.db).await?;
+
+        Ok(SaveVersionResponse {
+            version_id,
+            version_number: new_version_number,
+        })
+    }
+
     // Legacy methods for compatibility - will be removed after migration
     pub async fn store_encrypted_data(&self, _data: &EncryptedData) -> Result<()> {
         // This is a temporary bridge method

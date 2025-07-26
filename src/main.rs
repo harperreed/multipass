@@ -499,7 +499,7 @@ async fn secure_create_file(
     })?;
 
     // Encrypt content using WebAuthn signature-based key derivation
-    let _encrypted_content = crypto::encrypt_with_webauthn_signature(
+    let encrypted_content = crypto::encrypt_with_webauthn_signature(
         &req.content,
         &req.webauthn_signature,
         &challenge,
@@ -515,10 +515,17 @@ async fn secure_create_file(
         content: req.content, // This will be ignored in favor of encrypted_content
     };
 
-    // Store with secure encryption materials
+    // Store using secure encryption materials
     let response = state
         .storage
-        .create_file(&create_req, user_id, &passkey_id)
+        .create_file_secure(
+            &create_req,
+            user_id,
+            &passkey_id,
+            encrypted_content,
+            nonce.to_vec(),
+            salt.to_vec(),
+        )
         .await?;
 
     Ok(Json(response))
@@ -564,15 +571,29 @@ async fn secure_get_file_content(
 
     let file_id = Uuid::parse_str(&file_id)?;
 
-    // Get encrypted file content
-    let encrypted_response = state
+    // Get and decrypt file content using secure key derivation
+    let decrypted_content = state
+        .storage
+        .get_file_content_secure(
+            file_id,
+            req.version_id,
+            &passkey_id,
+            &req.webauthn_signature,
+            &challenge,
+        )
+        .await?;
+
+    // Get version info for response (we need this for the client)
+    let version_response = state
         .storage
         .get_file_content(file_id, req.version_id, &passkey_id)
         .await?;
 
-    // For now, return the encrypted response
-    // TODO: Implement secure decryption using WebAuthn signature
-    Ok(Json(encrypted_response))
+    Ok(Json(types::GetFileContentResponse {
+        content: decrypted_content,
+        version_id: version_response.version_id,
+        version_number: version_response.version_number,
+    }))
 }
 
 /// Secure file version saving with WebAuthn challenge-response authentication
@@ -615,15 +636,32 @@ async fn secure_save_file_version(
 
     let file_id = Uuid::parse_str(&file_id)?;
 
-    // For now, use the existing save method
-    // TODO: Implement secure encryption using WebAuthn signature
+    // Generate encryption materials
+    let (salt, nonce) = crypto::generate_encryption_materials().map_err(|e| {
+        error::AppError::Internal(format!("Failed to generate encryption materials: {}", e))
+    })?;
+
+    // Encrypt content using WebAuthn signature-based key derivation
+    let encrypted_content = crypto::encrypt_with_webauthn_signature(
+        &req.content,
+        &req.webauthn_signature,
+        &challenge,
+        &salt,
+        &nonce,
+    )
+    .map_err(|e| error::AppError::Internal(format!("Encryption failed: {}", e)))?;
+
+    // Save using secure encryption
     let response = state
         .storage
-        .save_file_version(
+        .save_file_version_secure(
             file_id,
             &req.content,
             req.change_summary.as_deref(),
             &passkey_id,
+            encrypted_content,
+            nonce.to_vec(),
+            salt.to_vec(),
         )
         .await?;
 
